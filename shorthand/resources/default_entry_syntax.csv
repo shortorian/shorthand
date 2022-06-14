@@ -1,0 +1,15 @@
+default_entry_prefix,item_separator,entry_prefix,entry_node_type,item_label,item_node_type,item_link_type,list_delimiter,item_prefix_separator,item_prefixes
+wrk,__,wrk,works,0,actors,author,_,,
+wrk,__,wrk,works,1,dates,published,,,
+wrk,__,wrk,works,2,,,,_,s t
+wrk,__,wrk,works,3,works,volume,,,
+wrk,__,wrk,works,4,works,page,,,
+wrk,__,wrk,works,5,identifiers,doi,,,
+wrk,__,wrk,works,s,works,supertitle,,,
+wrk,__,wrk,works,t,works,title,,,
+wrk,__,fun,agreements,0,actors,funder,_,,
+wrk,__,fun,agreements,1,agreements,title,_,,
+wrk,__,ack,,0,actors,,_,,
+wrk,__,org,,0,actors,,_,,
+wrk,__,qte,quotes,0,quotes,text,,,
+wrk,__,not,notes,0,notes,text,,,
