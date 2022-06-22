@@ -450,6 +450,62 @@ def normalize_types(to_norm, template, strict=True, continue_idx=True):
     return new_df
 
 
+def get_new_typed_values(
+    candidate_values,
+    existing_values,
+    value_column_label,
+    type_column_label,
+    candidate_type
+):
+    '''
+    Selects values out of a Series of candidate values if the values are
+    either not present in an existing dataframe or they are present but
+    do not have the same type as the candidates.
+
+    Parameters
+    ----------
+    candidate_values : pandas.Series
+        Values which may or may not be present in an existing dataframe
+
+    existing_values : pandas.DataFrame
+        A dataframe with a column of values to select against and a
+        column that identifies the type of each values
+
+    value_column_label
+        The label of the column of values in the existing_values
+        dataframe
+
+    type_column_label
+        The label of the column of types in the existing_values
+        dataframe
+
+    candidate_type
+        The type of the candidate values
+
+    Returns
+    -------
+    pandas.Series
+        Subset of the candidate values which are either not present in
+        the set of existing values or which are present but have a
+        different type in the set of existing values
+    '''
+    candidate_already_exists = existing_values[value_column_label].isin(
+        candidate_values
+    )
+    wrong_type = existing_values[type_column_label] != candidate_type
+    candidate_exists_wrong_type = candidate_already_exists & wrong_type
+
+    candidate_is_new_type = candidate_values.isin(
+        existing_values.loc[candidate_exists_wrong_type, value_column_label]
+    )
+
+    candidate_is_new_value = ~candidate_values.isin(
+        existing_values[value_column_label]
+    )
+
+    return candidate_values.loc[candidate_is_new_type | candidate_is_new_value]
+
+
 def missing_integers(input_values, rng=None):
     '''
     Creates a set of integers in a target range that does

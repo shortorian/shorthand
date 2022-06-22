@@ -31,6 +31,11 @@ def _item_prefix_splitter(item_grp, prefixed_items):
     ]
     default_pfix = default_pfix + item_pfx_separator
 
+    # escape any regex metacharacters in the expected prefixes
+    expected_prefixes = [
+        shnd.util.escape_regex_metachars(p) for p in expected_prefixes
+    ]
+
     # make a regular expression that will match any of the
     # possible prefixes for this item
     prefixes_regex = '|'.join([f'^{p}' for p in expected_prefixes])
@@ -232,10 +237,14 @@ def parse_entries(
         Entries expanded according to the entry syntax
     '''
 
+    # escape any regex metacharacters in the item separator so we can
+    # use it in regular expressions
+    regex_item_separator = shnd.util.escape_regex_metachars(item_separator)
+
     # Use a regular expression to split tags off the input strings. Tags
     # are separated from entries by an item separator followed by a
     # space.
-    tag_sep_regex = r"(?<!\\)[{}][ ]".format(']['.join(item_separator))
+    tag_sep_regex = r"(?<!\\)[{}][ ]".format(']['.join(regex_item_separator))
     entries = entries.str.split(pat=tag_sep_regex, expand=True)
 
     if len(entries.columns) == 1:
@@ -246,16 +255,20 @@ def parse_entries(
 
     # Use a regular expression to get entry prefixes
     # (null if no prefix)
-    prefixes_regex = '|'.join(
-        [p for p in entry_syntax['entry_prefix'].dropna().drop_duplicates()]
-    )
-    prefixes_regex = '^({})(?={})'.format(prefixes_regex, item_separator)
+    prefixes_regex = [
+        shnd.util.escape_regex_metachars(p) for p in
+        entry_syntax['entry_prefix'].dropna().drop_duplicates()
+    ]
+    prefixes_regex = '|'.join(prefixes_regex)
+    prefixes_regex = '^({})(?={})'.format(prefixes_regex, regex_item_separator)
 
     entries['entry_prefix'] = entries['string'].str.extract(prefixes_regex)
 
     # regular expressions to match bare and escaped item separators
-    item_separator_regex = r"(?<!\\)[{}]".format(']['.join(item_separator))
-    escaped_sep_regex = fr"(\\{item_separator})"
+    item_separator_regex = r"(?<!\\)[{}]".format(
+        ']['.join(regex_item_separator)
+    )
+    escaped_sep_regex = fr"(\\{regex_item_separator})"
 
     # no_prefix = entries['entry_prefix'].isna()
     # entries.loc[no_prefix, 'entry_prefix'] = default_entry_prefix
@@ -281,9 +294,11 @@ def parse_entries(
     # Replace any empty strings with null values
     expanded = expanded.mask(expanded == '', pd.NA)
 
-    # Regular expressions to match bare and escaped item separators
-    space_plchldr_regex = r"(?<!\\)({})".format(space_char)
-    escaped_space_plchldr_regex = fr"(\\{space_char})"
+    # Regular expressions to match bare and escaped space placeholders
+    regex_space_char = shnd.util.escape_regex_metachars(space_char)
+    space_plchldr_regex = r"(?<!\\)({})".format(regex_space_char)
+    escaped_space_plchldr_regex = fr"(\\{regex_space_char})"
+    
     # Replace space placeholders with spaces in the expanded items
     expanded = expanded.replace(
         to_replace=space_plchldr_regex,
@@ -293,7 +308,7 @@ def parse_entries(
     # Replace escaped space placeholders with bare placeholders
     expanded = expanded.replace(
         to_replace=escaped_space_plchldr_regex,
-        value=space_char,
+        value=regex_space_char,
         regex=True
     )
 
@@ -344,10 +359,11 @@ def parse_entries(
         index=node_type_map['entry_prefix'].array
     )
     # Add a row in the node type map for entries with no prefix
-    node_type_map[pd.NA] = shnd.util.get_single_value(
-        entry_syntax,
-        'default_entry_prefix'
+    default_entry_type = shnd.util.get_single_value(
+        entry_syntax.query('entry_prefix == @default_entry_prefix'),
+        'entry_node_type'
     )
+    node_type_map[pd.NA] = default_entry_type
     # Normalize null types
     entries = entries.fillna(pd.NA)
 

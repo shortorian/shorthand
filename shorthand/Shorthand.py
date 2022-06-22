@@ -563,39 +563,19 @@ class Shorthand:
                 case_sensitive=self.syntax_case_sensitive
             )
 
-        # if there are any regex metacharacters in item_separator,
-        # default_entry_prefix, space_char, or any of the
-        # na_string_values, we have to escape the metacharacters so we
-        # can use the strings in regular expressions
-
-        self.item_separator = shnd.util.escape_regex_metachars(
-            self.item_separator
-        )
-        self.default_entry_prefix = shnd.util.escape_regex_metachars(
-            self.default_entry_prefix
-        )
-
         if space_char is not None:
             space_char = str(space_char)
 
             if len(space_char) > 1:
                 raise ValueError('space_char must be a single character')
 
-            space_char = shnd.util.escape_regex_metachars(space_char)
-
         self.space_char = space_char
 
         if shnd.util.iterable_not_string(na_string_values):
-            na_string_values = [
-                shnd.util.escape_regex_metachars(v) for v in na_string_values
-            ]
-
+            self.na_string_values = na_string_values
         else:
-            na_string_values = [
-                shnd.util.escape_regex_metachars(na_string_values)
-            ]
+            self.na_string_values = [na_string_values]
 
-        self.na_string_values = na_string_values
         self.na_node_type = na_node_type
 
     def _apply_syntax(
@@ -796,8 +776,8 @@ class Shorthand:
             }
         )
         # replace missing entry prefixes with default value
-        pfix_isna = data['entry_prefix'].isna()
-        data.loc[pfix_isna, 'entry_prefix'] = self.default_entry_prefix
+        prefix_isna = data['entry_prefix'].isna()
+        data.loc[prefix_isna, 'entry_prefix'] = self.default_entry_prefix
 
         # For any strings that represent null values, overwrite the node
         # type inferred from the syntax with the null node type
@@ -1039,9 +1019,10 @@ class Shorthand:
         # input file. This allows direct selection of the original entry
         # strings. The text of the input file is not in the current
         # data set, so set the source strings to null.
+        tgt_string_ids = data.loc[data['item_label_id'].isna(), 'string_id']
         entry_links = pd.DataFrame({
             'src_string_id': pd.NA,
-            'tgt_string_id': data.loc[data['item_label_id'].isna(), 'string_id'].drop_duplicates().array,
+            'tgt_string_id': tgt_string_ids.drop_duplicates().array,
             'ref_string_id': pd.NA,
             'link_type_id': link_types.loc[link_types == 'entry'].index[0],
             'item_list_position': pd.NA
@@ -1192,10 +1173,16 @@ class Shorthand:
         # begining of this function. Now process the link types and
         # insert the tag strings into the links frame.
 
+        # Escape any regex metacharacters in the item separator so we
+        # can use it in regular expressions
+        regex_item_separator = shnd.util.escape_regex_metachars(
+            self.item_separator
+        )
+
         # Extract the link type overrides from the link metadata with a
         # regular expression
         # TAKES ONLY THE FIRST MATCH, OTHERS CONSIDERED TAGS
-        link_type_regex = rf"^(?:.*?)(lt{self.item_separator}\S+)"
+        link_type_regex = rf"^(?:.*?)(lt{regex_item_separator}\S+)"
         link_type_overrides = link_metadata.str.extract(link_type_regex)
         link_type_overrides = link_type_overrides.stack().dropna()
         link_type_overrides.index = link_type_overrides.index.droplevel(1)
@@ -1260,8 +1247,8 @@ class Shorthand:
             new_type = pd.Series('tag', index=index)
             node_types = pd.concat([node_types, new_type])
 
-        # Cache the node type for tag strings
-        tag_node_type = node_types.loc[node_types == 'tag'].index[0]
+        # Cache the node type ID for tag strings
+        tag_node_type_id = node_types.loc[node_types == 'tag'].index[0]
 
         # Add link type for tags if it doesn't already exist
         '''if 'tagged' not in link_types:
@@ -1272,7 +1259,7 @@ class Shorthand:
             new_type = pd.Series('tagged', index=index)
             link_types = pd.concat([link_types, new_type])'''
 
-        # Cache the link type for tag strings
+        # Cache the type ID for tag links
         tagged_link_type = link_types.loc[link_types == 'tagged'].index[0]
 
         # PROCESS NODE TAGS
@@ -1289,10 +1276,19 @@ class Shorthand:
         # tags is now a pandas.Series whose index is string IDs and
         # whose values are individual tag strings
 
-        # Add the tag strings to the rest of the strings
-        new_strings = tags.loc[~tags.isin(strings['string'])].array
+        # Tag strings should be added to the strings frame if they are
+        # not present in the strings frame OR if they are present and
+        # the existing string has a node type that isn't the tag node
+        # type
+        new_strings = shnd.util.get_new_typed_values(
+            tags,
+            strings,
+            'string',
+            'node_type_id',
+            tag_node_type_id
+        )
         new_strings = pd.DataFrame(
-            {'string': new_strings, 'node_type_id': tag_node_type},
+            {'string': new_strings.array, 'node_type_id': tag_node_type_id},
             index=tags.array
         )
         new_strings = shnd.util.normalize_types(new_strings, strings)
@@ -1317,9 +1313,11 @@ class Shorthand:
 
         links = pd.concat([links, new_links])
 
+        # PROCESS LINK TAGS
+
         # Extract the link tags from the link metadata with a regular
         # expression
-        link_tag_regex = rf"lt{self.item_separator}\S+"
+        link_tag_regex = rf"lt{regex_item_separator}\S+"
         tags = link_metadata.str.replace(link_tag_regex, '', n=1, regex=True)
         tags = tags.loc[tags != '']
 
@@ -1354,17 +1352,25 @@ class Shorthand:
 
         # Add the tag strings to the rest of the strings
         new_strings = tags.drop_duplicates()
-        new_strings = new_strings.loc[~new_strings.isin(strings['string'])]
+        # new_strings = new_strings.loc[~new_strings.isin(strings['string'])]
+        new_strings = shnd.util.get_new_typed_values(
+            new_strings,
+            strings,
+            'string',
+            'node_type_id',
+            tag_node_type_id
+        )
         new_strings = pd.DataFrame(
-            {'string': new_strings, 'node_type_id': tag_node_type}
+            {'string': new_strings.array, 'node_type_id': tag_node_type_id}
         )
         new_strings = shnd.util.normalize_types(new_strings, strings)
 
         strings = pd.concat([strings, new_strings])
 
         # convert the tag strings to string ID values
+        tag_strings = strings.loc[strings['node_type_id'] == tag_node_type_id]
         tags = tags.map(
-            pd.Series(strings.index, index=strings['string'])
+            pd.Series(tag_strings.index, index=tag_strings['string'])
         )
 
         # Relations between links and string-valued tags stored in the
@@ -1418,7 +1424,9 @@ class Shorthand:
         small_id_dtype=pd.Int8Dtype(),
         list_position_base=1
     ):
+        ####################
         # Validate arguments
+        ####################
 
         # We need to use the contents of the input file for parsing but
         # we also need to access the text after parsing. If we're passed
@@ -1472,7 +1480,9 @@ class Shorthand:
 
         list_position_base = int(list_position_base)
 
+        ###########################
         # Done validating arguments
+        ###########################
 
         # Parse input text
         parsed = self._apply_syntax(
