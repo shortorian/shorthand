@@ -23,7 +23,7 @@ def _concat_list_item_elements(list_elements):
     return item
 
 
-def _make_entry_items(
+def _synthesize_entries_from_links(
     group,
     entry_syntax,
     prefix_label_map,
@@ -355,6 +355,155 @@ class ParsedShorthand:
 
         [self.__setattr__(k, v) for k, v in locals().items() if k != 'self']
 
+    def _get_entries_by_prefix(
+        self,
+        entry_syntax,
+        source_string_id_subset
+    ):
+
+        # If this entry prefix isn't listed in the entry syntax, return
+        # an empty series
+        if entry_syntax.empty:
+            return pd.Series(dtype='object')
+
+        # Items in an entry might be linked to the null node rather than
+        # the target defined in the syntax. We only care about this when
+        # checking what kind of links are present for an entry in the
+        # parsed data, so we add rows to the entry syntax with every
+        # link type paired with a null item node type
+        null_syntax = entry_syntax.copy()[[
+            'item_label',
+            'item_node_type',
+            'item_link_type',
+            'list_delimiter'
+        ]]
+        null_syntax['item_node_type'] = self.na_node_type
+        null_syntax = null_syntax.drop_duplicates()
+        null_syntax = null_syntax.dropna(
+            subset=['item_node_type', 'item_link_type']
+        )
+        entry_syntax = pd.concat([entry_syntax, null_syntax])
+
+        # Make a map from positional index labels to any associated item
+        # prefixes
+        prefix_label_map = entry_syntax.query('item_prefixes.notna()')
+        prefix_label_map = pd.Series(
+            prefix_label_map['item_prefixes'].array,
+            index=prefix_label_map['item_label'].array
+        )
+        prefix_label_map = prefix_label_map.str.split().explode()
+
+        # Mutate it into a map from item prefixes to positional index
+        # labels
+        prefix_label_map = pd.Series(
+            prefix_label_map.index,
+            index=prefix_label_map
+        )
+
+        # Make a map from positional index labels to any associated item
+        # prefix separators
+        sep_label_map = entry_syntax.query('item_prefix_separator.notna()')
+        sep_label_map = pd.Series(
+            sep_label_map['item_prefix_separator'].array,
+            index=sep_label_map['item_label'].array
+        )
+        sep_label_map = prefix_label_map.map(sep_label_map)
+
+        # Use the separator map to propagate prefix separators from the
+        # syntax rows for the positional items to the syntax rows for
+        # the prefixed items.
+        prefix_separators = entry_syntax['item_label'].map(sep_label_map)
+        entry_syntax.loc[:, 'item_prefix_separator'] = prefix_separators.array
+
+        # Make a new column to represent item positions within the entry
+        # separately from the item labels
+        entry_syntax = pd.concat(
+            [
+                entry_syntax,
+                entry_syntax['item_label'].rename('item_position')
+            ],
+            axis='columns'
+        )
+
+        # Insert item positions for items whose labels are alphanumeric
+        # prefixes rather than positions
+        entry_syntax['item_position'].update(
+            entry_syntax['item_label'].map(prefix_label_map)
+        )
+
+        # Convert string-valued node types to integer IDs
+        node_type_id_map = pd.Series(
+            self.node_types.index,
+            index=self.node_types
+        )
+        node_type_ids = entry_syntax['item_node_type'].map(node_type_id_map)
+        entry_syntax.loc[:, 'item_node_type'] = node_type_ids.array
+
+        # Convert string-valued link types to integer IDs
+        link_type_id_map = pd.Series(
+            self.link_types.index,
+            index=self.link_types
+        )
+        link_type_ids = entry_syntax['item_link_type'].map(link_type_id_map)
+        entry_syntax.loc[:, 'item_link_type'] = link_type_ids.array
+
+        # Get the integer node type ID for this entry
+        entry_node_type = shnd.util.get_single_value(
+            entry_syntax,
+            'entry_node_type'
+        )
+        entry_node_type = self.id_lookup('node_types', entry_node_type)
+
+        # Get string IDs for strings that have the node type ID for this
+        # entry
+        string_id_selection = self.strings.query(
+            'node_type_id == @entry_node_type'
+        )
+        string_id_selection = string_id_selection.index
+
+        # Select links whose sources are the selected string IDs
+        source_selected = self.links['src_string_id'].isin(
+            string_id_selection
+        )
+
+        # Restrict selection to set of allowed source strings if caller
+        # provided one
+        if source_string_id_subset is not None:
+            source_string_id_subset = self.links['src_string_id'].isin(
+                source_string_id_subset
+            )
+            source_selected = source_selected & source_string_id_subset
+
+        # Restrict selection to the link types listed for items
+        # in the syntax for this entry prefix
+        link_type_selected = self.links['link_type_id'].isin(
+            entry_syntax['item_link_type']
+        )
+
+        link_selected = source_selected & link_type_selected
+
+        # If these criteria leave no links selected, return an empty
+        # Series. Otherwise, get a subset of links that meet our
+        # criteria.
+        if not link_selected.any():
+            return pd.Series(dtype='object')
+        else:
+            link_selection = self.links.loc[link_selected]
+
+        # Group the links by source string. If a source has links like
+        # the entry prefix in the syntax, generate strings representing
+        # items for that entry.
+        link_selection = link_selection.groupby(by='src_string_id')
+
+        entry_strings = link_selection.apply(
+            _synthesize_entries_from_links,
+            entry_syntax,
+            prefix_label_map,
+            self.strings
+        )
+
+        return entry_strings
+
     def id_lookup(self, attr, string, column_label='string'):
         '''
         Take the name of an attribute of ParsedShorthand. If the
@@ -489,7 +638,8 @@ class ParsedShorthand:
 
     def synthesize_entries(
         self,
-        entry_prefix,
+        entry_prefix=None,
+        entry_node_type=None,
         sort_by=None,
         sort_prefixes=True,
         sort_case_sensitive=True,
@@ -511,6 +661,9 @@ class ParsedShorthand:
         ----------
         entry_prefix : str
             prefix in the entry syntax
+
+        entry_node_type : str
+            entry node type in the entry syntax
 
         sort_by : str or list of str
             item columns on which the output should be sorted
@@ -544,309 +697,206 @@ class ParsedShorthand:
             case_sensitive=self.syntax_case_sensitive
         )
 
-        # Select a single entry prefix out of the entry syntax
-        entry_syntax = entry_syntax.query('entry_prefix == @entry_prefix')
+        if entry_prefix is not None:
+            # Select a single entry prefix out of the entry syntax
+            entry_syntax = entry_syntax.query('entry_prefix == @entry_prefix')
 
-        # If this entry prefix isn't listed in the entry syntax, return
-        # an empty series
-        if entry_syntax.empty:
-            return pd.Series(dtype='object')
+            # If there's no node type for this entry prefix then no
+            # synthesis is required. Read available entry strings
+            # directly and return them.
+            if entry_syntax['entry_node_type'].empty:
+                if missing_node_warning:
+                    print(
+                        'Warning: requested entry type has no node '
+                        'type in the entry syntax.\n>>> Selecting'
+                        'strings that begin with the entry prefix.'
+                        '\n>>> Unprefixed entries are ignored.'
+                    )
 
-        # Items in an entry might be linked to the null node rather than
-        # the target defined in the syntax. We only care about this when
-        # checking what kind of links are present for an entry in the
-        # parsed data, so we add rows to the entry syntax with every
-        # link type paired with a null item node type
-        null_syntax = entry_syntax.copy()[[
-            'item_label',
-            'item_node_type',
-            'item_link_type',
-            'list_delimiter'
-        ]]
-        null_syntax['item_node_type'] = self.na_node_type
-        null_syntax = null_syntax.drop_duplicates()
-        null_syntax = null_syntax.dropna(
-            subset=['item_node_type', 'item_link_type']
-        )
-        entry_syntax = pd.concat([entry_syntax, null_syntax])
+                entry_strings = self.strings.query(
+                    'node_type_id.isna()'
+                )
+                prefix = entry_prefix + self.item_separator
+                entry_strings = entry_strings.loc[
+                    entry_strings['string'].str.startswith(prefix)
+                ]
 
-        # Make a map from positional index labels to any associated item
-        # prefixes
-        prefix_label_map = entry_syntax.query('item_prefixes.notna()')
-        prefix_label_map = pd.Series(
-            prefix_label_map['item_prefixes'].array,
-            index=prefix_label_map['item_label'].array
-        )
-        prefix_label_map = prefix_label_map.str.split().explode()
+                entry_strings = entry_strings['string']
 
-        # Mutate it into a map from item prefixes to positional index
-        # labels
-        prefix_label_map = pd.Series(
-            prefix_label_map.index,
-            index=prefix_label_map
-        )
+                if sort_by is not None:
+                    entry_strings = entry_strings.sort_values()
 
-        # Make a map from positional index labels to any associated item
-        # prefix separators
-        sep_label_map = entry_syntax.query('item_prefix_separator.notna()')
-        sep_label_map = pd.Series(
-            sep_label_map['item_prefix_separator'].array,
-            index=sep_label_map['item_label'].array
-        )
-        sep_label_map = prefix_label_map.map(sep_label_map)
+                if fill_spaces:
+                    entry_strings = entry_strings.str.replace(
+                        ' ',
+                        self.space_char,
+                        regex=False
+                    )
 
-        # Use the separator map to propagate prefix separators from the
-        # syntax rows for the positional items to the syntax rows for
-        # the prefixed items.
-        prefix_separators = entry_syntax['item_label'].map(sep_label_map)
-        entry_syntax.loc[:, 'item_prefix_separator'] = prefix_separators.array
+                return pd.Series(entry_strings.array)
 
-        # Make a new column to represent item positions within the entry
-        # separately from the item labels
-        entry_syntax = pd.concat(
-            [
-                entry_syntax,
-                entry_syntax['item_label'].rename('item_position')
-            ],
-            axis='columns'
-        )
-
-        # Insert item positions for items whose labels are alphanumeric
-        # prefixes rather than positions
-        entry_syntax['item_position'].update(
-            entry_syntax['item_label'].map(prefix_label_map)
-        )
-
-        # Convert string-valued node types to integer IDs
-        node_type_id_map = pd.Series(
-            self.node_types.index,
-            index=self.node_types
-        )
-        node_type_ids = entry_syntax['item_node_type'].map(node_type_id_map)
-        entry_syntax.loc[:, 'item_node_type'] = node_type_ids.array
-
-        # Convert string-valued link types to integer IDs
-        link_type_id_map = pd.Series(
-            self.link_types.index,
-            index=self.link_types
-        )
-        link_type_ids = entry_syntax['item_link_type'].map(link_type_id_map)
-        entry_syntax.loc[:, 'item_link_type'] = link_type_ids.array
-
-        # Get the integer node type ID for this entry
-        entry_node_type = shnd.util.get_single_value(
-            entry_syntax,
-            'entry_node_type'
-        )
-
-        if pd.isna(entry_node_type):
-            if missing_node_warning:
-                print(
-                    'Warning: requested entry type has no node type in '
-                    'the entry syntax. Selecting strings that begin '
-                    'with the entry prefix. Unprefixed entries are '
-                    'ignored.'
+            else:
+                entry_strings = self._get_entries_by_prefix(
+                    entry_syntax,
+                    source_string_id_subset
                 )
 
-            entry_strings = self.strings.query(
-                'node_type_id.isna()'
+        elif entry_node_type is not None:
+            # Select a single node type out of the entry syntax
+            entry_syntax = entry_syntax.query(
+                'entry_node_type == @entry_node_type'
             )
-            prefix = entry_prefix + self.item_separator
-            entry_strings = entry_strings.loc[
-                entry_strings['string'].str.startswith(prefix)
+
+            # Synthesize entries for each entry prefix in the selection
+            prefixes = entry_syntax['entry_prefix'].drop_duplicates()
+            syntaxes = [
+                entry_syntax.query('entry_prefix == @entry_prefix')
+                for entry_prefix in prefixes
+            ]
+            entry_strings = [
+                self._get_entries_by_prefix(syntax, source_string_id_subset)
+                for syntax in syntaxes
             ]
 
-            entry_strings = entry_strings['string']
+            # Concatenate entries for the different prefixes
+            entry_strings = pd.concat(entry_strings)
 
-            if sort_by is not None:
-                entry_strings = entry_strings.sort_values()
+        if sort_by is None:
+            # If we aren't sorting the output, insert prefixes for
+            # prefixed strings and pivot the DataFrame so that each
+            # row represents a single entry
+            entry_strings = entry_strings.apply(
+                _prefix_targets,
+                axis='columns'
+            )
+            entry_strings = entry_strings.reset_index()
+            entry_strings = entry_strings.pivot(
+                index='src_string_id',
+                columns='item_position',
+                values='tgt_string'
+            )
 
         else:
 
-            entry_node_type = self.id_lookup('node_types', entry_node_type)
+            # make sort_by list-like if it isn't already
+            try:
+                assert sort_by.__iter__
 
-            # Get string IDs for strings that have the node type ID for this
-            # entry
-            string_id_selection = self.strings.query(
-                'node_type_id == @entry_node_type'
-            )
-            string_id_selection = string_id_selection.index
+            except AttributeError:
+                sort_by = [sort_by]
 
-            # Get links whose sources are the selected string IDs and whose
-            # link types are in the set of item link types for this entry
-            source_selected = self.links['src_string_id'].isin(
-                string_id_selection
-            )
+            # If we are sorting the output, make a map from item
+            # labels to item prefix separators
+            prefix_separators = entry_strings.copy()[
+                ['item_prefix_separator', 'item_label']
+            ]
+            prefix_separators = prefix_separators.drop_duplicates()
+            prefix_separators = prefix_separators.set_index('item_label')
+            prefix_separators = prefix_separators.squeeze()
 
-            # Restrict selection to set of allowed source strings if caller
-            # provided one
-            if source_string_id_subset is not None:
-                source_string_id_subset = self.links['src_string_id'].isin(
-                    source_string_id_subset
-                )
-                source_selected = source_selected & source_string_id_subset
-
-            link_type_selected = self.links['link_type_id'].isin(
-                entry_syntax['item_link_type']
-            )
-
-            link_selected = source_selected & link_type_selected
-
-            # If these criteria leave no links selected, return an empty
-            # Series. Otherwise, get a subset of links that meet our
-            # criteria.
-            if not link_selected.any():
-                return pd.Series(dtype='object')
-            else:
-                link_selection = self.links.loc[link_selected]
-
-            # Group the links by source string. If a source has links like
-            # the entry prefix in the syntax, generate strings representing
-            # items for that entry.
-            link_selection = link_selection.groupby(by='src_string_id')
-
-            entry_strings = link_selection.apply(
-                _make_entry_items,
-                entry_syntax,
-                prefix_label_map,
-                self.strings
+            # Pivot the entry strings into a DataFrame so that each
+            # row represents a single entry. The column labels are a
+            # multiindex containing both the item label, which could
+            # be a prefix, and the item position, which is always a
+            # string of digits
+            entry_strings = entry_strings.reset_index()
+            entry_strings = entry_strings.pivot(
+                index='src_string_id',
+                columns=['item_label', 'item_position'],
+                values='tgt_string'
             )
 
-            if sort_by is None:
-                # If we aren't sorting the output, insert prefixes for
-                # prefixed strings and pivot the DataFrame so that each
-                # row represents a single entry
+            if len(entry_strings) == 1:
+                order = entry_strings.index
+
+            elif sort_prefixes:
+                # If we're sorting the prefixes first, insert
+                # prefixes
                 entry_strings = entry_strings.apply(
-                    _prefix_targets,
-                    axis='columns'
-                )
-                entry_strings = entry_strings.reset_index()
-                entry_strings = entry_strings.pivot(
-                    index='src_string_id',
-                    columns='item_position',
-                    values='tgt_string'
+                    _prefix_column,
+                    args=(prefix_separators,)
                 )
 
-            else:
-
-                # make sort_by list-like if it isn't already
-                try:
-                    assert sort_by.__iter__
-
-                except AttributeError:
-                    sort_by = [sort_by]
-
-                # If we are sorting the output, make a map from item
-                # labels to item prefix separators
-                prefix_separators = entry_strings.copy()[
-                    ['item_prefix_separator', 'item_label']
+                # Get column(s) for the item position(s) we're
+                # sorting on.
+                order = [
+                    entry_strings.loc[:, (slice(None), str(label))]
+                    for label in sort_by
                 ]
-                prefix_separators = prefix_separators.drop_duplicates()
-                prefix_separators = prefix_separators.set_index('item_label')
-                prefix_separators = prefix_separators.squeeze()
 
-                # Pivot the entry strings into a DataFrame so that each
-                # row represents a single entry. The column labels are a
-                # multiindex containing both the item label, which could
-                # be a prefix, and the item position, which is always a
-                # string of digits
-                entry_strings = entry_strings.reset_index()
-                entry_strings = entry_strings.pivot(
-                    index='src_string_id',
-                    columns=['item_label', 'item_position'],
-                    values='tgt_string'
-                )
+                # If the item to sort on is prefixed, then there is
+                # one column for each (item prefix, item position)
+                # pair, so we have to collapse those into a single
+                # column before sorting
+                order = [
+                    shnd.util.collapse_columns(part, part.columns)
+                    for part in order
+                ]
 
-                if len(entry_strings) == 1:
-                    order = entry_strings.index
-
-                elif sort_prefixes:
-                    # If we're sorting the prefixes first, insert
-                    # prefixes
-                    entry_strings = entry_strings.apply(
-                        _prefix_column,
-                        args=(prefix_separators,)
-                    )
-
-                    # Get column(s) for the item position(s) we're
-                    # sorting on.
-                    order = [
-                        entry_strings.loc[:, (slice(None), str(label))]
-                        for label in sort_by
-                    ]
-
-                    # If the item to sort on is prefixed, then there is
-                    # one column for each (item prefix, item position)
-                    # pair, so we have to collapse those into a single
-                    # column before sorting
-                    order = [
-                        shnd.util.collapse_columns(part, part.columns)
-                        for part in order
-                    ]
-
-                    # Make each item position into a single column,
-                    # optionally casefolding if the sort is not
-                    # case sensitive
-                    if sort_case_sensitive:
-                        order = [part.squeeze() for part in order]
-                    else:
-                        order = [
-                            part.squeeze().str.casefold() for part in order
-                        ]
-
-                    # concat the item position(s) we're sorting on into
-                    # a single dataframe
-                    order = pd.concat(order, axis='columns')
-
+                # Make each item position into a single column,
+                # optionally casefolding if the sort is not
+                # case sensitive
+                if sort_case_sensitive:
+                    order = [part.squeeze() for part in order]
                 else:
-                    # If we're sorting on unprefixed string values, do
-                    # the same operations described above, but get the
-                    # strings and sort them before adding the prefixes
                     order = [
-                        entry_strings.loc[:, (slice(None), str(label))]
-                        for label in sort_by
-                    ]
-                    order = [
-                        shnd.util.collapse_columns(part, part.columns)
-                        for part in order
+                        part.squeeze().str.casefold() for part in order
                     ]
 
-                    if sort_case_sensitive:
-                        order = [part.squeeze() for part in order]
-                    else:
-                        order = [
-                            part.squeeze().str.casefold() for part in order
-                        ]
+                # concat the item position(s) we're sorting on into
+                # a single dataframe
+                order = pd.concat(order, axis='columns')
 
-                    order = pd.concat(order, axis='columns')
+            else:
+                # If we're sorting on unprefixed string values, do
+                # the same operations described above, but get the
+                # strings and sort them before adding the prefixes
+                order = [
+                    entry_strings.loc[:, (slice(None), str(label))]
+                    for label in sort_by
+                ]
+                order = [
+                    shnd.util.collapse_columns(part, part.columns)
+                    for part in order
+                ]
 
-                    entry_strings = entry_strings.apply(
-                        _prefix_column,
-                        args=(prefix_separators,)
-                    )
+                if sort_case_sensitive:
+                    order = [part.squeeze() for part in order]
+                else:
+                    order = [
+                        part.squeeze().str.casefold() for part in order
+                    ]
 
-                # Get an index of entry strings in the requested order
-                order = order.sort_values(list(order.columns)).index
+                order = pd.concat(order, axis='columns')
 
-                # Group all columns by item position and collapse groups
-                # into single columns.
-                entry_strings = entry_strings.groupby(
-                    axis=1,
-                    level='item_position',
-                    group_keys=False
-                )
                 entry_strings = entry_strings.apply(
-                    lambda x: shnd.util.collapse_columns(x, x.columns)
+                    _prefix_column,
+                    args=(prefix_separators,)
                 )
 
-                # Put the entries in the sorted order we generated above
+            # Get an index of entry strings in the requested order
+            order = order.sort_values(list(order.columns)).index
 
-                entry_strings = entry_strings.loc[order]
-
-            # Join items by the item separator
-            entry_strings = entry_strings.apply(
-                lambda x: self.item_separator.join(x), axis='columns'
+            # Group all columns by item position and collapse groups
+            # into single columns.
+            entry_strings = entry_strings.groupby(
+                axis=1,
+                level='item_position',
+                group_keys=False
             )
+            entry_strings = entry_strings.apply(
+                lambda x: shnd.util.collapse_columns(x, x.columns)
+            )
+
+            # Put the entries in the sorted order we generated above
+
+            entry_strings = entry_strings.loc[order]
+
+        print(entry_strings)
+        # Join items by the item separator
+        entry_strings = entry_strings.apply(
+            lambda x: self.item_separator.join(x), axis='columns'
+        )
 
         # Return a Series of strings representing single entries,
         # removing any names for the array or the index that were
