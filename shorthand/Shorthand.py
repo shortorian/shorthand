@@ -1408,6 +1408,7 @@ class Shorthand:
             item_separator=self.item_separator,
             default_entry_prefix=self.default_entry_prefix,
             space_char=self.space_char,
+            comment_char=comment_char,
             na_string_values=self.na_string_values,
             na_node_type=self.na_node_type,
             syntax_case_sensitive=self.syntax_case_sensitive

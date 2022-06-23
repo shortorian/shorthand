@@ -348,6 +348,7 @@ class ParsedShorthand:
             item_separator,
             default_entry_prefix,
             space_char,
+            comment_char,
             na_string_values,
             na_node_type,
             syntax_case_sensitive
@@ -651,12 +652,6 @@ class ParsedShorthand:
         Takes an entry prefix and generates a pandas Series of string
         representations of each entry of that type in the parsed data.
 
-        WARNING (22 jun 2022)
-        This function doesn't currently escape things like item
-        separators from items within entries. If an input entry had an
-        escaped separator or comment character, this function will
-        create entry strings that do not parse correctly.
-
         Parameters
         ----------
         entry_prefix : str
@@ -892,14 +887,29 @@ class ParsedShorthand:
 
             entry_strings = entry_strings.loc[order]
 
-        # Join items by the item separator
         entry_strings = entry_strings.apply(
-            lambda x: self.item_separator.join(x), axis='columns'
+            lambda x:
+            x.str.replace(
+                self.comment_char,
+                '\\' + self.comment_char,
+                regex=False
+            )
         )
 
-        # Return a Series of strings representing single entries,
-        # removing any names for the array or the index that were
-        # retained by operations above
+        entry_strings = entry_strings.apply(
+            lambda x:
+            x.str.replace(
+                self.item_separator,
+                '\\' + self.item_separator,
+                regex=False
+            )
+        )
+
+        # Join items by the item separator
+        entry_strings = entry_strings.apply(
+            lambda x: self.item_separator.join(x),
+            axis='columns'
+        )
 
         if fill_spaces:
             entry_strings = entry_strings.str.replace(
