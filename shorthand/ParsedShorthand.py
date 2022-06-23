@@ -732,12 +732,12 @@ class ParsedShorthand:
                 # make sort_by list-like if it isn't already
                 try:
                     assert sort_by.__iter__
-                
+
                 except AttributeError:
                     sort_by = [sort_by]
 
-                # If we are sorting the output, make a map from item labels
-                # to item prefix separators
+                # If we are sorting the output, make a map from item
+                # labels to item prefix separators
                 prefix_separators = entry_strings.copy()[
                     ['item_prefix_separator', 'item_label']
                 ]
@@ -745,11 +745,11 @@ class ParsedShorthand:
                 prefix_separators = prefix_separators.set_index('item_label')
                 prefix_separators = prefix_separators.squeeze()
 
-                # Pivot the entry strings into a DataFrame so that each row
-                # represents a single entry. The column labels are a
-                # multiindex containing both the item label, which could be
-                # a prefix, and the item position, which is always a string
-                # of digits
+                # Pivot the entry strings into a DataFrame so that each
+                # row represents a single entry. The column labels are a
+                # multiindex containing both the item label, which could
+                # be a prefix, and the item position, which is always a
+                # string of digits
                 entry_strings = entry_strings.reset_index()
                 entry_strings = entry_strings.pivot(
                     index='src_string_id',
@@ -761,45 +761,47 @@ class ParsedShorthand:
                     order = entry_strings.index
 
                 elif sort_prefixes:
-                    # If we're sorting the prefixes first, insert prefixes
+                    # If we're sorting the prefixes first, insert
+                    # prefixes
                     entry_strings = entry_strings.apply(
                         _prefix_column,
                         args=(prefix_separators,)
                     )
 
-                    # Get column(s) for the item position(s) we're sorting on.
+                    # Get column(s) for the item position(s) we're
+                    # sorting on.
                     order = [
                         entry_strings.loc[:, (slice(None), str(label))]
                         for label in sort_by
                     ]
 
-                    # If the item to sort on is prefixed, then there is one
-                    # column for each (item prefix, item position) pair, so
-                    # we have to collapse those into a single column before
-                    # sorting
+                    # If the item to sort on is prefixed, then there is
+                    # one column for each (item prefix, item position)
+                    # pair, so we have to collapse those into a single
+                    # column before sorting
                     order = [
                         shnd.util.collapse_columns(part, part.columns)
                         for part in order
                     ]
 
-                    # If the sort is case sensitive, sort the item and get
-                    # the sorted list of source string IDs, otherwise do a
-                    # unicode casefold and then sort
+                    # Make each item position into a single column,
+                    # optionally casefolding if the sort is not
+                    # case sensitive
                     if sort_case_sensitive:
-                        order = pd.concat(
-                            [part.squeeze() for part in order],
-                            axis='columns'
-                        )
+                        order = [part.squeeze() for part in order]
                     else:
-                        order = pd.concat(
-                            [part.squeeze().str.casefold() for part in order],
-                            axis='columns'
-                        )
+                        order = [
+                            part.squeeze().str.casefold() for part in order
+                        ]
+
+                    # concat the item position(s) we're sorting on into
+                    # a single dataframe
+                    order = pd.concat(order, axis='columns')
 
                 else:
-                    # If we're sorting on unprefixed string values, do the
-                    # same operations described above, but get the strings
-                    # and sort them before adding the prefixes
+                    # If we're sorting on unprefixed string values, do
+                    # the same operations described above, but get the
+                    # strings and sort them before adding the prefixes
                     order = [
                         entry_strings.loc[:, (slice(None), str(label))]
                         for label in sort_by
@@ -810,15 +812,13 @@ class ParsedShorthand:
                     ]
 
                     if sort_case_sensitive:
-                        order = pd.concat(
-                            [part.squeeze() for part in order],
-                            axis='columns'
-                        )
+                        order = [part.squeeze() for part in order]
                     else:
-                        order = pd.concat(
-                            [part.squeeze().str.casefold() for part in order],
-                            axis='columns'
-                        )
+                        order = [
+                            part.squeeze().str.casefold() for part in order
+                        ]
+
+                    order = pd.concat(order, axis='columns')
 
                     entry_strings = entry_strings.apply(
                         _prefix_column,
@@ -840,7 +840,7 @@ class ParsedShorthand:
                 )
 
                 # Put the entries in the sorted order we generated above
-            
+
                 entry_strings = entry_strings.loc[order]
 
             # Join items by the item separator
