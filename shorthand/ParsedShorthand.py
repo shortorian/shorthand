@@ -892,7 +892,6 @@ class ParsedShorthand:
 
             entry_strings = entry_strings.loc[order]
 
-        print(entry_strings)
         # Join items by the item separator
         entry_strings = entry_strings.apply(
             lambda x: self.item_separator.join(x), axis='columns'
