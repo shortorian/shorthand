@@ -1108,8 +1108,167 @@ class Shorthand:
         })
         links = pd.concat([links, entry_links])
 
-        # Check if this instance has a link syntax. If so, generate
-        # links according to the syntax
+        # Get entry prefixes for each side of links defined in the link
+        # syntax
+        left_prefixes = _get_entry_prefix_ids(
+            'left',
+            data,
+            dplct_entries,
+            csv_column_id_map
+        )
+        right_prefixes = _get_entry_prefix_ids(
+            'right',
+            data,
+            dplct_entries,
+            csv_column_id_map
+        )
+
+        # Recover entry prefix IDs for duplicate entries whose original
+        # string value is in a different csv column
+        _copy_cross_duplicates(left_prefixes, right_prefixes)
+
+        # Done with the "entry" csv columns, so drop them
+        left_prefixes = left_prefixes.drop('entry_csv_col', axis='columns')
+        right_prefixes = right_prefixes.drop('entry_csv_col', axis='columns')
+
+        # Pair up the prefixes so we can generate links from the link
+        # syntax
+        left_prefixes = left_prefixes.rename(
+            columns={'string_csv_row': 'L_str_csv_row',
+                     'string_csv_col': 'L_str_csv_col'}
+        )
+
+        right_prefixes = right_prefixes.rename(
+            columns={'string_csv_row': 'R_str_csv_row',
+                     'string_csv_col': 'R_str_csv_col'}
+        )
+        prefix_pairs = left_prefixes.merge(right_prefixes)
+
+        link_types, link_syntax = shnd.syntax_parsing.parse_link_syntax(
+            self.link_syntax,
+            self.entry_syntax,
+            entry_prefix_id_map,
+            link_types,
+            item_label_id_map,
+            case_sensitive=self.syntax_case_sensitive
+        )
+
+        # Get string IDs for links whose sources and targets are matched
+        # one-to-one according to the link syntax
+        link_has_no_list = link_syntax['list_mode'].isna()
+        link_is_one_to_one = (link_syntax['list_mode'] == '1:1')
+        list_mode_subset = link_has_no_list | link_is_one_to_one
+
+        sources = _get_link_component_string_ids(
+            prefix_pairs,
+            data,
+            link_syntax,
+            'src_',
+            subset=list_mode_subset,
+            columns=['entry_csv_row', 'string_id', 'link_type_id']
+        )
+        targets = _get_link_component_string_ids(
+            prefix_pairs,
+            data,
+            link_syntax,
+            'tgt_',
+            subset=list_mode_subset,
+            columns=['string_id', 'item_list_position']
+        )
+        references = _get_link_component_string_ids(
+            prefix_pairs,
+            data,
+            link_syntax,
+            'ref_',
+            subset=list_mode_subset,
+            columns=['entry_csv_row', 'string_id']
+        )
+
+        one_to_one_links = pd.concat([sources, targets], axis='columns')
+        one_to_one_links = one_to_one_links.merge(
+            references,
+            on='entry_csv_row',
+            how='left'
+        )
+
+        # Get string IDs for links whose sources and targets are not
+        # matched one-to-one
+        list_mode_subset = link_syntax['list_mode'].isin(['1:m', 'm:1', 'm:m'])
+
+        sources = _get_link_component_string_ids(
+            prefix_pairs,
+            data,
+            link_syntax,
+            'src_',
+            subset=list_mode_subset,
+            columns=['entry_csv_row', 'string_id', 'link_type_id']
+        )
+        targets = _get_link_component_string_ids(
+            prefix_pairs,
+            data,
+            link_syntax,
+            'tgt_',
+            subset=list_mode_subset,
+            columns=['entry_csv_row', 'string_id', 'item_list_position']
+        )
+        references = _get_link_component_string_ids(
+            prefix_pairs,
+            data,
+            link_syntax,
+            'ref_',
+            subset=list_mode_subset,
+            columns=['entry_csv_row', 'string_id']
+        )
+
+        other_links = sources.merge(targets, on='entry_csv_row')
+        other_links = other_links.merge(references, on='entry_csv_row')
+
+        one_to_one_links = shnd.util.normalize_types(
+            one_to_one_links,
+            links,
+            strict=False
+        )
+        other_links = shnd.util.normalize_types(
+            other_links,
+            links,
+            strict=False
+        )
+        links = pd.concat([links, one_to_one_links, other_links])
+
+        links = links.reset_index(drop=True)
+        links = links.rename(columns={'item_list_position': 'list_position'})
+        links = links.astype({
+            'src_string_id': big_id_dtype,
+            'tgt_string_id': big_id_dtype,
+            'ref_string_id': big_id_dtype,
+            'link_type_id': small_id_dtype,
+            'entry_csv_row': big_id_dtype,
+            'list_position': small_id_dtype
+        })
+
+        # Link metadata, overriding link types created above and/or
+        # adding tags to links, was extracted from entries near the
+        # begining of this function. Now process the link types and
+        # insert the tag strings into the links frame.
+
+        # Escape any regex metacharacters in the item separator so we
+        # can use it in regular expressions
+        regex_item_separator = shnd.util.escape_regex_metachars(
+            self.item_separator
+        )
+
+        # Extract the link type overrides from the link metadata with a
+        # regular expression
+        # TAKES ONLY THE FIRST MATCH, OTHERS CONSIDERED TAGS
+        link_type_regex = rf"^(?:.*?)(lt{regex_item_separator}\S+)"
+        link_type_overrides = link_metadata.str.extract(link_type_regex)
+        link_type_overrides = link_type_overrides.stack().dropna()
+        link_type_overrides.index = link_type_overrides.index.droplevel(1)
+        link_type_overrides = link_type_overrides.str.split(
+            self.item_separator,
+            expand=True
+        )
+
         try:
             assert self.link_syntax
 
