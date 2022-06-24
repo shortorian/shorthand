@@ -1328,6 +1328,8 @@ class Shorthand:
             # link syntax. If it wasn't present, continue.
             pass
 
+        # The item_list_position label is probably only intelligible
+        # when handling items within entries, so rename it
         links = links.rename(columns={'item_list_position': 'list_position'})
 
         '''***********************************************************
