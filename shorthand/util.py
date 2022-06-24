@@ -1,30 +1,6 @@
 import pandas as pd
 
 
-def collapse_columns(df, columns):
-
-    if iterable_not_string(columns):
-        if len(columns) > 1:
-            if not df[columns].count(axis=1).lt(2).all():
-                raise ValueError(
-                    'found multiple values in a single row for columns '
-                    '{}'.format(columns)
-                )
-            return df[columns].ffill(axis=1).dropna(axis=1)
-
-        elif len(columns) == 1:
-            return pd.DataFrame(df[columns])
-
-        else:
-            return pd.DataFrame(dtype='object')
-
-    elif (type(columns) == str):
-        return df[columns]
-
-    else:
-        raise ValueError('unrecognized input value for columns')
-
-
 def create_id_map(domain, drop_na=True, **kwargs):
     '''
     Maps distinct values in a domain to a range of integers.  Additional
@@ -686,9 +662,3 @@ def set_string_dtype(df):
             )
         )
     )
-
-
-def strip_csv_comments(column, pattern):
-
-    column = column.str.split(pat=pattern, expand=True)
-    return column[0]

@@ -2,6 +2,30 @@ import pandas as pd
 import shorthand as shnd
 
 
+def _collapse_columns(df, columns):
+
+    if iterable_not_string(columns):
+        if len(columns) > 1:
+            if not df[columns].count(axis=1).lt(2).all():
+                raise ValueError(
+                    'found multiple values in a single row for columns '
+                    '{}'.format(columns)
+                )
+            return df[columns].ffill(axis=1).dropna(axis=1)
+
+        elif len(columns) == 1:
+            return pd.DataFrame(df[columns])
+
+        else:
+            return pd.DataFrame(dtype='object')
+
+    elif (type(columns) == str):
+        return df[columns]
+
+    else:
+        raise ValueError('unrecognized input value for columns')
+
+
 def _concat_list_item_elements(list_elements):
 
     sep = shnd.util.get_single_value(list_elements, 'list_delimiter')
@@ -824,7 +848,7 @@ class ParsedShorthand:
                 # pair, so we have to collapse those into a single
                 # column before sorting
                 order = [
-                    shnd.util.collapse_columns(part, part.columns)
+                    _collapse_columns(part, part.columns)
                     for part in order
                 ]
 
@@ -851,7 +875,7 @@ class ParsedShorthand:
                     for label in sort_by
                 ]
                 order = [
-                    shnd.util.collapse_columns(part, part.columns)
+                    _collapse_columns(part, part.columns)
                     for part in order
                 ]
 
@@ -880,7 +904,7 @@ class ParsedShorthand:
                 group_keys=False
             )
             entry_strings = entry_strings.apply(
-                lambda x: shnd.util.collapse_columns(x, x.columns)
+                lambda x: _collapse_columns(x, x.columns)
             )
 
             # Put the entries in the sorted order we generated above
