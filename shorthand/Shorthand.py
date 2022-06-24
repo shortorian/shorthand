@@ -1131,6 +1131,8 @@ class Shorthand:
         left_prefixes = left_prefixes.drop('entry_csv_col', axis='columns')
         right_prefixes = right_prefixes.drop('entry_csv_col', axis='columns')
 
+        # Pair up the prefixes so we can generate links from the link
+        # syntax
         left_prefixes = left_prefixes.rename(
             columns={'string_csv_row': 'L_str_csv_row',
                      'string_csv_col': 'L_str_csv_col'}
@@ -1140,9 +1142,6 @@ class Shorthand:
             columns={'string_csv_row': 'R_str_csv_row',
                      'string_csv_col': 'R_str_csv_col'}
         )
-
-        # Pair up the prefixes so we can generate links from the link
-        # syntax
         prefix_pairs = left_prefixes.merge(right_prefixes)
 
         link_types, link_syntax = shnd.syntax_parsing.parse_link_syntax(
