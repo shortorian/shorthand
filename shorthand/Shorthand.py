@@ -1350,15 +1350,6 @@ class Shorthand:
         # Cache the node type ID for tag strings
         tag_node_type_id = node_types.loc[node_types == 'tag'].index[0]
 
-        # Add link type for tags if it doesn't already exist
-        '''if 'tagged' not in link_types:
-            index = pd.Series(
-                link_types.index.max() + 1,
-                dtype=link_types.index.dtype
-            )
-            new_type = pd.Series('tagged', index=index)
-            link_types = pd.concat([link_types, new_type])'''
-
         # Cache the type ID for tag links
         tagged_link_type = link_types.loc[link_types == 'tagged'].index[0]
 
