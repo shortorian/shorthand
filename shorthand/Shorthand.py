@@ -72,6 +72,15 @@ def _strip_csv_comments(column, pattern):
     return column[0]
 
 
+def _replace_escaped_comment_chars(column, comment_char, pattern):
+
+    return column.replace(
+        to_replace=pattern,
+        value=comment_char,
+        regex=True
+    )
+
+
 def _expand_items(
     group,
     entry_syntax,
@@ -243,7 +252,7 @@ def _normalize_shorthand(shnd_input, comment_char, fill_cols, drop_na):
 
     # Replace escaped comment characters with bare comment characters
     shnd_input = shnd_input.apply(
-        shnd.util.replace_escaped_comment_chars,
+        _replace_escaped_comment_chars,
         args=(comment_char, escaped_comment_regex)
     )
 

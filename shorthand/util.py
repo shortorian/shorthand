@@ -477,15 +477,6 @@ def non_intersecting_sequence(
         return pd.Series(new_ints, dtype='int').array
 
 
-def replace_escaped_comment_chars(column, comment_char, pattern):
-
-    return column.replace(
-        to_replace=pattern,
-        value=comment_char,
-        regex=True
-    )
-
-
 def set_string_dtype(df):
     '''
     can't use pd.StringDtype() throughout because it currently doesn't
