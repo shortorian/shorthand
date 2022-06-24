@@ -3,6 +3,12 @@ import shorthand as shnd
 from pathlib import Path
 
 
+def _strip_csv_comments(column, pattern):
+
+    column = column.str.split(pat=pattern, expand=True)
+    return column[0]
+
+
 def _expand_items(
     group,
     entry_syntax,
@@ -164,7 +170,7 @@ def _normalize_shorthand(shnd_input, comment_char, fill_cols, drop_na):
     # Split cells where comments start and take the uncommented part
     has_comment = has_comment.any(axis=1)
     shnd_input.loc[has_comment, :] = shnd_input.loc[has_comment].apply(
-        shnd.util.strip_csv_comments,
+        _strip_csv_comments,
         args=(comment_char,)
     )
 
