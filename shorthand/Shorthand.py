@@ -1112,8 +1112,8 @@ class Shorthand:
         try:
             assert self.link_syntax
 
-            # Get entry prefixes for each side of links defined in the link
-            # syntax
+            # Get entry prefixes for each side of links defined in the
+            # link syntax
             left_prefixes = _get_entry_prefix_ids(
                 'left',
                 data,
@@ -1127,26 +1127,32 @@ class Shorthand:
                 csv_column_id_map
             )
 
-            # Recover entry prefix IDs for duplicate entries whose original
-            # string value is in a different csv column
+            # Recover entry prefix IDs for duplicate entries whose
+            # original string value is in a different csv column
             _copy_cross_duplicates(left_prefixes, right_prefixes)
 
             # Done with the "entry" csv columns, so drop them
             left_prefixes = left_prefixes.drop('entry_csv_col', axis='columns')
-            right_prefixes = right_prefixes.drop('entry_csv_col', axis='columns')
+            right_prefixes = right_prefixes.drop(
+                'entry_csv_col', axis='columns'
+            )
 
             left_prefixes = left_prefixes.rename(
-                columns={'string_csv_row': 'L_str_csv_row',
-                        'string_csv_col': 'L_str_csv_col'}
+                columns={
+                    'string_csv_row': 'L_str_csv_row',
+                    'string_csv_col': 'L_str_csv_col'
+                }
             )
 
             right_prefixes = right_prefixes.rename(
-                columns={'string_csv_row': 'R_str_csv_row',
-                        'string_csv_col': 'R_str_csv_col'}
+                columns={
+                    'string_csv_row': 'R_str_csv_row',
+                    'string_csv_col': 'R_str_csv_col'
+                }
             )
 
-            # Pair up the prefixes so we can generate links from the link
-            # syntax
+            # Pair up the prefixes so we can generate links from the
+            # link syntax
             prefix_pairs = left_prefixes.merge(right_prefixes)
 
             link_types, link_syntax = shnd.syntax_parsing.parse_link_syntax(
@@ -1158,8 +1164,8 @@ class Shorthand:
                 case_sensitive=self.syntax_case_sensitive
             )
 
-            # Get string IDs for links whose sources and targets are matched
-            # one-to-one according to the link syntax
+            # Get string IDs for links whose sources and targets are
+            # matched one-to-one according to the link syntax
             link_has_no_list = link_syntax['list_mode'].isna()
             link_is_one_to_one = (link_syntax['list_mode'] == '1:1')
             list_mode_subset = link_has_no_list | link_is_one_to_one
@@ -1198,7 +1204,9 @@ class Shorthand:
 
             # Get string IDs for links whose sources and targets are not
             # matched one-to-one
-            list_mode_subset = link_syntax['list_mode'].isin(['1:m', 'm:1', 'm:m'])
+            list_mode_subset = link_syntax['list_mode'].isin(
+                ['1:m', 'm:1', 'm:m']
+            )
 
             sources = _get_link_component_string_ids(
                 prefix_pairs,
@@ -1255,14 +1263,14 @@ class Shorthand:
             # begining of this function. Now process the link types and
             # insert the tag strings into the links frame.
 
-            # Escape any regex metacharacters in the item separator so we
-            # can use it in regular expressions
+            # Escape any regex metacharacters in the item separator so
+            # we can use it in regular expressions
             regex_item_separator = shnd.util.escape_regex_metachars(
                 self.item_separator
             )
 
-            # Extract the link type overrides from the link metadata with a
-            # regular expression
+            # Extract the link type overrides from the link metadata
+            # with a regular expression
             # TAKES ONLY THE FIRST MATCH, OTHERS CONSIDERED TAGS
             link_type_regex = rf"^(?:.*?)(lt{regex_item_separator}\S+)"
             link_type_overrides = link_metadata.str.extract(link_type_regex)
@@ -1286,7 +1294,8 @@ class Shorthand:
                     shnd.util.normalize_types(new_link_types, link_types)
                 ])
 
-                # Map string-valued type overrides to integer link type IDs
+                # Map string-valued type overrides to integer link
+                # type IDs
                 link_type_overrides = link_type_overrides.map(
                     pd.Series(link_types.index, index=link_types.array)
                 )
@@ -1302,8 +1311,8 @@ class Shorthand:
                 # then there are no new links to process.
                 pass
 
-            # The link metadata index currently refers to csv rows. Replace
-            # it with integer link index values.
+            # The link metadata index currently refers to csv rows.
+            # Replace it with integer link index values.
             row_map = links.query('entry_csv_row.isin(@link_metadata.index)')
             row_map = pd.Series(
                 row_map.index,
@@ -1409,7 +1418,12 @@ class Shorthand:
             # Extract the link tags from the link metadata with a regular
             # expression
             link_tag_regex = rf"lt{regex_item_separator}\S+"
-            tags = link_metadata.str.replace(link_tag_regex, '', n=1, regex=True)
+            tags = link_metadata.str.replace(
+                link_tag_regex,
+                '',
+                n=1,
+                regex=True
+            )
             tags = tags.loc[tags != '']
 
             # Convert any one-to-one link target list positions into strings
@@ -1443,7 +1457,6 @@ class Shorthand:
 
             # Add the tag strings to the rest of the strings
             new_strings = tags.drop_duplicates()
-            # new_strings = new_strings.loc[~new_strings.isin(strings['string'])]
             new_strings = shnd.util.get_new_typed_values(
                 new_strings,
                 strings,
@@ -1459,7 +1472,9 @@ class Shorthand:
             strings = pd.concat([strings, new_strings])
 
             # convert the tag strings to string ID values
-            tag_strings = strings.loc[strings['node_type_id'] == tag_node_type_id]
+            tag_strings = strings.loc[
+                strings['node_type_id'] == tag_node_type_id
+            ]
             tags = tags.map(
                 pd.Series(tag_strings.index, index=tag_strings['string'])
             )
