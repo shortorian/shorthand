@@ -97,8 +97,8 @@ def _expand_items(
 
     # The group name is a tuple (entry_prefix_id, item_label_id)
     if pd.isna(group.name[1]):
-        # If the item label ID is NA then this group is the entry
-        # strings rather than items parsed out of the entries
+        # If the item label ID is NA then this group is entry
+        # strings rather than items parsed out of entries
         return group
 
     else:
