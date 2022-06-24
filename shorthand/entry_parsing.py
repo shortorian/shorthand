@@ -298,7 +298,7 @@ def parse_entries(
     regex_space_char = shnd.util.escape_regex_metachars(space_char)
     space_plchldr_regex = r"(?<!\\)({})".format(regex_space_char)
     escaped_space_plchldr_regex = fr"(\\{regex_space_char})"
-    
+
     # Replace space placeholders with spaces in the expanded items
     expanded = expanded.replace(
         to_replace=space_plchldr_regex,
