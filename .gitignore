@@ -128,6 +128,4 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-notes/generate output for an (entry prefix, link type, entry prefix) tuple.md
-notes/generate output for an entry prefix.md
-notes/shorthand class psuedocode.md
+notes/
