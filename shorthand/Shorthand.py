@@ -1408,8 +1408,8 @@ class Shorthand:
         try:
             assert self.link_syntax
 
-            # Extract the link tags from the link metadata with a regular
-            # expression
+            # Extract the link tags from the link metadata with a
+            # regular expression
             link_tag_regex = rf"lt{regex_item_separator}\S+"
             tags = link_metadata.str.replace(
                 link_tag_regex,
