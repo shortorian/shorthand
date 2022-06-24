@@ -3,6 +3,69 @@ import shorthand as shnd
 from pathlib import Path
 
 
+def _create_id_map(domain, drop_na=True, **kwargs):
+    '''
+    Maps distinct values in a domain to a range of integers.  Additional
+    keyword arguments are passed to the pandas.Series constructor when
+    the map series is created.
+
+    Parameters
+    ----------
+    domain : list-like (coercible to pandas.Series)
+        Arbitrary set of values to map. May contain duplicates.
+
+    drop_na : bool, default True
+        Ignore null values and map only non-null values to integers.
+
+    Returns
+    -------
+    pandas.Series
+        Series whose length is the number of distinct values in the
+        input domain.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> dom = ['a', 'a', 'b', pd.NA, 'f', 'b']
+    >>> _create_id_map(dom, dtype=pd.UInt32Dtype())
+
+    a    0
+    b    1
+    f    2
+    dtype: UInt32
+
+    >>> _create_id_map(dom, drop_na=False, dtype=pd.UInt32Dtype())
+
+    a       0
+    b       1
+    <NA>    2
+    f       3
+    dtype: UInt32
+    '''
+    # check if domain object has a str attribute like a pandas.Series
+    # and convert if not
+    try:
+        assert domain.str
+        # make a copy so we can mutate one (potentially large) object
+        # instead of creating additional references
+        domain = domain.copy()
+    except AttributeError:
+        domain = pd.Series(domain)
+
+    if drop_na:
+        domain = domain.loc[~domain.isna()]
+
+    distinct_values = domain.unique()
+
+    id_map = pd.Series(
+        range(len(distinct_values)),
+        index=distinct_values,
+        **kwargs
+    )
+
+    return id_map
+
+
 def _strip_csv_comments(column, pattern):
 
     column = column.str.split(pat=pattern, expand=True)
@@ -685,7 +748,7 @@ class Shorthand:
 
         # replace text column labels with integers so we compute on
         # integer indexes
-        csv_column_id_map = shnd.util.create_id_map(
+        csv_column_id_map = _create_id_map(
             list(data.columns),
             dtype=pd.UInt8Dtype()
         )
@@ -815,7 +878,7 @@ class Shorthand:
         ******************************************************'''
 
         # Map string-valued entry prefixes to integer IDs
-        entry_prefix_id_map = shnd.util.create_id_map(
+        entry_prefix_id_map = _create_id_map(
             data['entry_prefix'],
             dtype=small_id_dtype
         )
@@ -828,7 +891,7 @@ class Shorthand:
         )
 
         # Map string-valued item labels to integer IDs
-        item_label_id_map = shnd.util.create_id_map(
+        item_label_id_map = _create_id_map(
             data['item_label'],
             dtype=small_id_dtype
         )
@@ -845,7 +908,7 @@ class Shorthand:
         link_types = pd.Series(['entry', 'tagged', 'requires'])
 
         # Map string-valued link types to integer IDs
-        link_types = shnd.util.create_id_map(
+        link_types = _create_id_map(
             pd.concat([link_types, data['link_type']]),
             dtype=small_id_dtype
         )
@@ -947,7 +1010,7 @@ class Shorthand:
         ])
 
         # Map string-valued node types to integer IDs
-        node_types = shnd.util.create_id_map(
+        node_types = _create_id_map(
             pd.concat([node_types, strings['node_type']]),
             dtype=small_id_dtype
         )
