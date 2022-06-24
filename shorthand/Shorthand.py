@@ -449,7 +449,8 @@ def _get_link_component_string_ids(
     # parsed data
     link_component[['csv_row', 'csv_col']] = pd.concat(
         [left_indexes, right_indexes]
-    ).sort_index()
+    )
+    link_component = link_component.sort_index()
 
     # Drop all the information required to sort out which column
     # the string values came from
