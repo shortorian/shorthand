@@ -4,7 +4,7 @@ import shorthand as shnd
 
 def _collapse_columns(df, columns):
 
-    if iterable_not_string(columns):
+    if shnd.util.iterable_not_string(columns):
         if len(columns) > 1:
             if not df[columns].count(axis=1).lt(2).all():
                 raise ValueError(
