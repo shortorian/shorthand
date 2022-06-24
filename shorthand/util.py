@@ -1,21 +1,6 @@
 import pandas as pd
 
 
-def map_values_to_id(df, label, dtype=pd.UInt64Dtype()):
-    '''
-    THIS FUNCTION MUTATES ITS FIRST ARGUMENT
-
-    Make a map from values in a dataframe column to integers, replace
-    the column with integer values, and return a pandas.Series with the
-    integers as an index and the original column values as the array.
-    '''
-
-    id_map = create_id_map(df[label], dtype=dtype)
-    df[label] = df[label].map(id_map)
-
-    return pd.Series(id_map.index, index=id_map)
-
-
 def escape_regex_metachars(s):
     s = s.replace("\\", "\\\\")
     metachars = '.^$*+?{}[]|()'
