@@ -237,6 +237,9 @@ def parse_entries(
         Entries expanded according to the entry syntax
     '''
 
+    if entries.empty:
+        raise ValueError('entries cannot be empty')
+
     # escape any regex metacharacters in the item separator so we can
     # use it in regular expressions
     regex_item_separator = shnd.util.escape_regex_metachars(item_separator)

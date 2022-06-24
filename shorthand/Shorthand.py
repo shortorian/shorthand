@@ -67,7 +67,9 @@ def _create_id_map(domain, drop_na=True, **kwargs):
 
 
 def _strip_csv_comments(column, pattern):
-
+    # make the whole column string valued
+    column = column.fillna('')
+    # split off the comments and return the non-comment part
     column = column.str.split(pat=pattern, expand=True)
     return column[0]
 
@@ -208,9 +210,10 @@ def _normalize_shorthand(shnd_input, comment_char, fill_cols, drop_na):
     if not all(valid_columns):
         raise ValueError(
             'shorthand csv files must have a header whose first four '
-            'column labels must be (ignoring case and list order):\n'
+            'column labels must be:\n'
             '>>> ["left_entry", "right_entry", '
-            '"link_tags_or_override", "reference"]'
+            '"link_tags_or_override", "reference"]\n'
+            '>>> (ignoring case and list order)'
         )
 
     # If the comment character is a regex metacharacter, escape it
@@ -221,7 +224,8 @@ def _normalize_shorthand(shnd_input, comment_char, fill_cols, drop_na):
 
     # Find cells where comments start
     has_comment = shnd_input.apply(
-        lambda x: x.str.contains(unescaped_comment_regex)
+        lambda x:
+        x.str.contains(unescaped_comment_regex) if x.notna().any() else False
     )
     has_comment = has_comment.fillna(False)
 
@@ -249,6 +253,7 @@ def _normalize_shorthand(shnd_input, comment_char, fill_cols, drop_na):
     # Drop rows that began with comments
     shnd_input = shnd_input.mask(shnd_input == '')
     shnd_input = shnd_input.dropna(how='all')
+    shnd_input = shnd_input.replace('', pd.NA)
 
     # Replace escaped comment characters with bare comment characters
     shnd_input = shnd_input.apply(
@@ -822,6 +827,16 @@ class Shorthand:
                 'string_csv_row': big_id_dtype,
                 'string_csv_col': pd.UInt8Dtype()
             })
+
+        else:
+            # If there are no duplicate entries, initialize an empty
+            # DataFrame
+            dplct_entries = pd.DataFrame(columns=[
+                'entry_csv_row',
+                'entry_csv_col',
+                'string_csv_row',
+                'string_csv_col'
+            ])
 
         # Remove clearspace around the entry strings
         data = data.str.strip()
@@ -1566,7 +1581,7 @@ class Shorthand:
             fill_cols = [fill_cols]
 
         if not shnd.util.iterable_not_string(drop_na):
-            if drop_na is None:
+            if drop_na is None or drop_na is False:
                 drop_na = []
 
             drop_na = [drop_na]
