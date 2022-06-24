@@ -9,11 +9,13 @@ def escape_regex_metachars(s):
     return s
 
 
-def extend_id_map(domain,
-                  existing_domain,
-                  existing_range=None,
-                  drop_na=True,
-                  **kwargs):
+def extend_id_map(
+    domain,
+    existing_domain,
+    existing_range=None,
+    drop_na=True,
+    **kwargs
+):
     '''
     Map distinct values in a domain which are not in an existing domain
     to integers that do not overlap with an existing range. Additional
