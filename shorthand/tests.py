@@ -96,4 +96,3 @@ def test_single_column_wrk_synthesis():
     ])
 
     assert (check == synthesized).all()
-
