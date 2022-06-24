@@ -807,7 +807,7 @@ class Shorthand:
 
             # Reset the index and rename columns. "string" csv indexes
             # refer to the location of a distinct string value. "entry"
-            # csv indexes refer to the location of a shorthand# entry
+            # csv indexes refer to the location of a shorthand entry
             # whose string value is potentially a duplicate.
             dplct_entries = dplct_entries.reset_index()
             dplct_entries = dplct_entries.rename(
