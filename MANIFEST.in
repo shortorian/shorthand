@@ -1,1 +1,2 @@
-recursive-include shorthand/resources shorthand/test_data
+recursive-include shorthand/resources
+recursive-include shorthand/test_data
