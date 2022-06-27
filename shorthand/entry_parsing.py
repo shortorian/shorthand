@@ -92,7 +92,7 @@ def _expand_grouped_entries(
         A DataFrame the same length as the input with columns defined
         by the item_label column in entry_syntax.
     '''
-    # strip any trailing separators from each entry this operation
+    # Strip any trailing separators from each entry. This operation
     # creates a copy of the input group, so we're free to mutate the
     # copy
     expanded = entry_grp.str.rstrip(item_separator)
