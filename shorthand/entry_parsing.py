@@ -53,13 +53,15 @@ def _item_prefix_splitter(item_grp, prefixed_items):
     return pfixed.str.split(item_pfx_separator, n=1, expand=True)
 
 
-def _expand_grouped_entries(entry_grp,
-                            entry_syntax,
-                            item_separator,
-                            item_separator_regex,
-                            escaped_sep_regex,
-                            na_string_values,
-                            default_entry_prefix):
+def _expand_grouped_entries(
+    entry_grp,
+    entry_syntax,
+    item_separator,
+    item_separator_regex,
+    escaped_sep_regex,
+    na_string_values,
+    default_entry_prefix
+):
     '''
     Takes a pandas.Series of stacked strings representing shorthand
     entries and expands them into their component items according to
