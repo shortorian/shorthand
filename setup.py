@@ -17,6 +17,6 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url='https://github.com/shortorian/shorthand',
     license='MIT',
-    python_requires='>=3.9',
+    python_requires='>=3',
     install_requires=[]
 )
