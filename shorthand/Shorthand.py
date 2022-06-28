@@ -886,7 +886,7 @@ class Shorthand:
             # 'string': pd.StringDtype(),
             # 'node_type': pd.StringDtype(),
             # 'link_type': pd.StringDtype(),
-            # 'node_type': pd.StringDtype()
+            # 'node_tags': pd.StringDtype()
         }
         # can't use pd.StringDtype() throughout because it currently
         # doesn't allow construction with null types other than pd.NA.
