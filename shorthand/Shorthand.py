@@ -290,6 +290,12 @@ def _get_item_link_source_IDs(group):
 
     # If any link types are not null then return the string_id of the
     # entry the items were exploded from
+    # NOTE: this depends on entry syntax validation checking that when
+    # an entry type has links for any item it has links for all 
+    # (unprefixed) items. That way the only string with no link type
+    # here is the entry string itself. If that syntax validation
+    # requirement is relaxed in the future for some reason, this code
+    # will break.
     else:
         entry_string_id = group.loc[link_type_is_na, 'string_id'].squeeze()
         return pd.Series([entry_string_id]*len(group))
