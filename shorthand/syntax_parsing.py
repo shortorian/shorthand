@@ -184,7 +184,7 @@ def _validate_entry_syntax_prefix_group(group):
         ~item_prefix_separator_not_na,
         'item_link_type'
     ]
-    if any_link_types and unprefixed_link_types.isna.any():
+    if any_link_types and unprefixed_link_types.isna().any():
         raise EntrySyntaxError(
             'Error parsing labels for entry_prefix {}. If any rows '
             'have an item link type then all rows with no item prefix '
