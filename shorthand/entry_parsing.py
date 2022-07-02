@@ -403,7 +403,6 @@ def _expand_csv_items(group, delimiters):
     delimiter = delimiters.loc[item_label_id, 'list_delimiter']
 
     if pd.isna(delimiter):
-        group.loc[:, 'string'] = group['string'].apply(lambda x: [x])
         return group
 
     else:
