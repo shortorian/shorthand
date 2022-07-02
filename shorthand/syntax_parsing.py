@@ -102,24 +102,24 @@ def _validate_entry_syntax_prefix_group(group):
         group_key=group.name
     )
 
-    entry_node_type_na = group['entry_node_type'].isna()
-    link_type_na = group['item_link_type'].isna()
+    no_entry_node_types = group['entry_node_type'].isna().all()
+    any_entry_node_types = group['entry_node_type'].notna().any()
+    no_link_types = group['item_link_type'].isna().all()
+    any_link_types = group['item_link_type'].notna().any()
 
     msg = (
         'Error parsing syntax for entry_prefix {}. There are no values '
         'in column "{}" but column "{}" contains values.'
     )
 
-    if entry_node_type_na.all():
-        if (~link_type_na).any():
-            raise EntrySyntaxError(
-                msg.format(group.name, 'entry_node_type', 'item_link_type')
-            )
-    if link_type_na.all():
-        if (~entry_node_type_na).any():
-            raise EntrySyntaxError(
-                msg.format(group.name, 'item_link_type', 'entry_node_type')
-            )
+    if no_entry_node_types and any_link_types:
+        raise EntrySyntaxError(
+            msg.format(group.name, 'entry_node_type', 'item_link_type')
+        )
+    if no_link_types and any_entry_node_types:
+        raise EntrySyntaxError(
+            msg.format(group.name, 'item_link_type', 'entry_node_type')
+        )
 
     item_node_type_na = group['item_node_type'].isna()
     if item_node_type_na.any():
@@ -179,6 +179,18 @@ def _validate_entry_syntax_prefix_group(group):
                 'the same entry prefix must have different item labels.'
                 .format(group.name)
             )
+
+    unprefixed_link_types = group.loc[
+        ~item_prefix_separator_not_na,
+        'item_link_type'
+    ]
+    if any_link_types and unprefixed_link_types.isna.any():
+        raise EntrySyntaxError(
+            'Error parsing labels for entry_prefix {}. If any rows '
+            'have an item link type then all rows with no item prefix '
+            'separator must also have an item link '
+            'type.'.format(group.name)
+        )
 
     item_data = ['item_node_type', 'item_link_type']
     if group[item_data].dropna(how='all').duplicated().any():
