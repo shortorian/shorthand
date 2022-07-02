@@ -389,3 +389,23 @@ def parse_entries(
     entries = pd.concat([expanded, entries]).sort_index().fillna(pd.NA)
 
     return entries
+
+
+def _expand_csv_items(group, delimiters):
+    '''
+    THIS FUNCTION MUTATES ITS FIRST ARGUMENT
+
+    Takes item strings grouped by item label and splits the strings if
+    given a list delimiter for the group.
+    '''
+
+    item_label_id = group.name
+    delimiter = delimiters.loc[item_label_id, 'list_delimiter']
+
+    if pd.isna(delimiter):
+        group.loc[:, 'string'] = group['string'].apply(lambda x: [x])
+        return group
+
+    else:
+        group.loc[:, 'string'] = group['string'].str.split(delimiter)
+        return group
