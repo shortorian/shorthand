@@ -83,7 +83,7 @@ def _replace_escaped_comment_chars(column, comment_char, pattern):
     )
 
 
-def _expand_items(
+def _expand_shorthand_items(
     group,
     entry_syntax,
     entry_prefix_id_map,
@@ -966,7 +966,7 @@ class Shorthand:
             dropna=False
         )
         data = data.apply(
-            _expand_items,
+            _expand_shorthand_items,
             entry_syntax,
             entry_prefix_id_map,
             item_label_id_map
