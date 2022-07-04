@@ -1119,10 +1119,10 @@ class Shorthand:
         # input file. This allows direct selection of the original entry
         # strings. The text of the input file is not in the current
         # data set, so set the source strings to null.
-        tgt_string_ids = data.loc[data['item_label_id'].isna(), 'string_id']
+        entry_tgt_ids = data.loc[data['item_label_id'].isna(), 'string_id']
         entry_links = pd.DataFrame({
             'src_string_id': pd.NA,
-            'tgt_string_id': tgt_string_ids.drop_duplicates().array,
+            'tgt_string_id': entry_tgt_ids.drop_duplicates().array,
             'ref_string_id': pd.NA,
             'link_type_id': link_types.loc[link_types == 'entry'].index[0],
             'item_list_position': pd.NA
