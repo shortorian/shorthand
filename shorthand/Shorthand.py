@@ -1729,3 +1729,474 @@ class Shorthand:
         parsed.links.loc[src_isna, 'src_string_id'] = input_text_string_id
 
         return parsed
+
+    def parse_items(
+        self,
+        data,
+        entry_node_type=None,
+        entry_prefix=None,
+        big_id_dtype=pd.Int32Dtype(),
+        small_id_dtype = pd.Int8Dtype(),
+        comma_separated=True,
+        list_position_base=1
+    ):
+
+        entry_syntax = shnd.syntax_parsing.validate_entry_syntax(
+            self.entry_syntax,
+            case_sensitive=self.syntax_case_sensitive
+        )
+
+        if 'entry_prefix' in entry_syntax.columns:
+            try:
+                entry_prefix = shnd.util.get_single_value(
+                    entry_syntax,
+                    'entry_prefix'
+                )
+                entry_node_type = shnd.util.get_single_value(
+                    entry_syntax,
+                    'entry_node_type'
+                )
+            except ValueError as e:
+                if 'multiple values' in e.message:
+                    if entry_prefix is None:
+                        raise ValueError(
+                            'Must provide an entry prefix when parsing '
+                            'items using a syntax with multiple entry '
+                            'prefixes.'
+                        )
+                    else:
+                        entry_syntax = entry_syntax.query(
+                            'entry_prefix == @entry_prefix'
+                        )
+                        entry_node_type = shnd.util.get_single_value(
+                            entry_syntax,
+                            'entry_node_type'
+                        )
+                elif 'only nan' in e.message:
+                    if entry_node_type is None:
+                        entry_node_type = shnd.util.get_single_value(
+                            entry_syntax,
+                            'entry_node_type'
+                        )
+        
+        elif entry_node_type is None:
+            entry_node_type = shnd.util.get_single_value(
+                entry_syntax,
+                'entry_node_type'
+            )
+
+        if comma_separated:
+            item_separator = '", "'
+        else:
+            item_separator = self.item_separator
+
+        entries = data.apply(
+            lambda x: item_separator.join(map(str, x)),
+            axis=1
+        )
+
+        if comma_separated:
+            entries = entries.apply(lambda x: '"' + x + '"')
+
+        entries = pd.DataFrame({
+            'string': entries.array,
+            'node_type': entry_node_type
+        })
+        entries = entries.reset_index().rename(columns={'index': 'csv_row'})
+
+        # Replace NA values and empty strings with the first string in
+        # na_string_values
+        data = data.fillna(self.na_string_values[0])
+        data = data.replace('', self.na_string_values[0])
+
+        # items with no node type in the entry syntax are prefixed to
+        # indicate which node type they correspond to
+        item_is_prefixed = entry_syntax['item_node_type'].isna()
+
+        if item_is_prefixed.any():
+
+            prefixed_items = entry_syntax.loc[item_is_prefixed]
+            labels_of_prefixed_items = prefixed_items['item_label'].array
+
+            # stack the prefixed items into a series
+            disagged = data[labels_of_prefixed_items].stack()
+
+            # Split the prefixes off of the stacked items and expand into a
+            # dataframe
+            disagged = disagged.groupby(level=1).apply(
+                shnd.entry_parsing._item_prefix_splitter,
+                prefixed_items
+            )
+
+            # drop the item labels from the multiindex so the disaggregated
+            # items align with the index of the entry group
+            disagged.index = disagged.index.droplevel(1)
+
+            # pivot the disaggregated items to create a dataframe with
+            # columns for each item prefix
+            disagged = disagged.pivot(columns=0)
+            disagged.columns = disagged.columns.get_level_values(1)
+
+            # get labels of items that are not prefixed and present in this
+            # dataset
+            unprefixed_item_labels = [
+                label for label in entry_syntax['item_label']
+                if label.isdigit()
+                and label in data.columns
+                and label not in labels_of_prefixed_items
+            ]
+
+            # select only the unprefixed item labels
+            data = data[unprefixed_item_labels]
+            # concatenate the unprefixed and prefixed items
+            data = pd.concat([data, disagged], axis='columns')
+
+        # Replace any empty strings with null values
+        data = data.mask(data == '', pd.NA)
+
+        # Regular expressions to match bare and escaped space placeholders
+        regex_space_char = shnd.util.escape_regex_metachars(self.space_char)
+        space_plchldr_regex = r"(?<!\\)({})".format(regex_space_char)
+        escaped_space_plchldr_regex = fr"(\\{regex_space_char})"
+
+        # Replace space placeholders with spaces in the data items
+        data = data.replace(
+            to_replace=space_plchldr_regex,
+            value=' ',
+            regex=True
+        )
+        # Replace escaped space placeholders with bare placeholders
+        data = data.replace(
+            to_replace=escaped_space_plchldr_regex,
+            value=regex_space_char,
+            regex=True
+        )
+
+        # Stack data. Stacking creates a series whose values are the string
+        # values of every item in the input and whose index levels are
+        #       input index, item label
+        data = data.stack()
+
+        # create a map from item labels to node types and link types
+        item_types = pd.DataFrame(
+            {
+                'node_type': entry_syntax['item_node_type'].array,
+                'link_type': entry_syntax['item_link_type'].array
+            },
+            index=entry_syntax['item_label'].array
+        )
+        item_types = item_types.loc[data.index.get_level_values(1)]
+
+        data = pd.concat([data.rename('string'), item_types], axis=1)
+        # data = _set_StringDtype(data)
+
+        data = data.reset_index()
+        data = data.rename(
+            columns={
+                'level_0': 'csv_row',
+                'level_1': 'item_label'
+            }
+        )
+
+        # Concatenate expanded items with the entries
+        data = pd.concat([data, entries]).sort_index().fillna(pd.NA)
+
+        # For any strings that represent null values, overwrite the node
+        # type inferred from the syntax with the null node type
+        null_strings = data['string'].isin(self.na_string_values)
+        data.loc[null_strings, 'node_type'] = self.na_node_type
+
+        dtypes = {
+            'csv_row': big_id_dtype,
+            # 'item_label': pd.StringDtype(),
+            # 'string': pd.StringDtype(),
+            # 'node_type': pd.StringDtype(),
+            # 'link_type': pd.StringDtype()
+        }
+        # can't use pd.StringDtype() throughout because it currently
+        # doesn't allow construction with null types other than pd.NA.
+        # This will likely change soon
+        # https://github.com/pandas-dev/pandas/pull/41412
+
+        data = data.astype(dtypes)
+        data.index = data.index.astype(big_id_dtype)
+
+        '''
+        data is currently a DataFrame with these columns:
+
+            ['csv_row', 'item_label', 'string', 'node_type', 'link_type']
+
+        csv_row is integer-valued, others are 'object'
+        '''
+
+        # Map string-valued item labels to integer IDs
+        item_label_id_map = shnd.Shorthand._create_id_map(
+            data['item_label'],
+            dtype=small_id_dtype
+        )
+        # Replace item labels in the mutable data with integer IDs
+        data['item_label'] = data['item_label'].map(
+            item_label_id_map
+        )
+        data = data.rename(
+            columns={'item_label': 'item_label_id'}
+        )
+
+        # These link types are required to complete linking operations
+        # later
+        link_types = pd.Series(['entry', 'tagged', 'requires'])
+
+        # Map string-valued link types to integer IDs
+        link_types = shnd.Shorthand._create_id_map(
+            pd.concat([link_types, data['link_type']]),
+            dtype=small_id_dtype
+        )
+        # Replace link types in the mutable data with integer IDs
+        data['link_type'] = data['link_type'].map(
+            link_types
+        )
+        data = data.rename(
+            columns={'link_type': 'link_type_id'}
+        )
+        # Mutate link_types into a series whose index is integer IDs and
+        # whose values are string-valued link types
+        link_types = pd.Series(link_types.index, index=link_types)
+
+        '''
+        data is currently a DataFrame with these columns:
+
+            ['csv_row', 'item_label_id', 'string', 'node_type', 'link_type_id']
+
+        csv_row, item_label_id, and link_type_id are integer-valued, others
+        are 'object'
+        '''
+
+        # Pair item type IDs with list delimiters
+        delimiters = entry_syntax[['item_label', 'list_delimiter']].copy()
+        delimiters['item_label'] = delimiters['item_label'].map(
+            item_label_id_map
+        )
+        delimiters = delimiters.rename(columns={'item_label': 'item_label_id'})
+
+        # Split items by delimiter
+        data = data.groupby(by='item_label_id', dropna=False)
+        data = data.apply(shnd.entry_parsing._expand_csv_items, delimiters)
+
+        # Locate items that do not have a list delimiter
+        item_is_delimited = data['string'].map(
+            pd.api.types.is_list_like
+        )
+        item_not_delimited = data.loc[~item_is_delimited].index
+
+        # Explode the delimited strings
+        data = data.explode('string')
+
+        # Make a copy of the index, drop values that do not refer to delimited
+        # items, then groupby the remaining index values and do a cumulative
+        # count to get the position of each element in each item that has a list
+        # delimiter
+        item_list_pos = data.index
+        item_list_pos = pd.Series(
+            item_list_pos.array,
+            index=item_list_pos,
+            dtype=small_id_dtype
+        )
+
+        item_list_pos.loc[item_list_pos.isin(item_not_delimited)] = pd.NA
+        item_list_pos = item_list_pos.dropna().groupby(item_list_pos.dropna())
+        item_list_pos = item_list_pos.cumcount()
+
+        # Shift the values by the list position base
+        item_list_pos = item_list_pos + list_position_base
+
+        item_list_pos = item_list_pos.astype(small_id_dtype)
+
+        # Store the item list positions and reset the index
+        item_list_pos = item_list_pos.array
+        data.loc[item_is_delimited, 'item_list_position'] = item_list_pos
+        data = data.reset_index(drop=True)
+
+        '''
+        data is currently a DataFrame with these columns:
+        [
+            'csv_row', 'item_label_id', 'string', 'node_type', 'link_type_id',
+            'item_list_position'
+        ]
+        string and node_type are 'object' dtype, others are integer
+        '''
+
+        # The strings dataframe is a relation between a string value
+        # and a node type. Its index is integer string IDs
+        strings = data[['string', 'node_type']].drop_duplicates(
+            subset='string'
+        )
+        strings = strings.reset_index(drop=True)
+        strings.index = strings.index.astype(big_id_dtype)
+
+        # Drop node types from the mutable data
+        data = data.drop('node_type', axis='columns')
+
+        # Replace strings in the mutable data with integer IDs
+        data['string'] = data['string'].map(
+            pd.Series(strings.index, index=strings['string'])
+        )
+        data = data.rename(columns={'string': 'string_id'})
+
+        # These node types will be required later
+        node_types = pd.Series([
+            'items_csv_text',
+            'shorthand_entry_syntax',
+            'shorthand_link_syntax',
+            'python_function',
+            'tag'
+        ])
+
+        # Map string-valued node types to integer IDs
+        node_types = shnd.Shorthand._create_id_map(
+            pd.concat([node_types, strings['node_type']]),
+            dtype=small_id_dtype
+        )
+
+        # Replace string-valued node types in the strings dataframe with
+        # integer IDs
+        strings['node_type'] = strings['node_type'].map(node_types)
+        strings = strings.rename(columns={'node_type': 'node_type_id'})
+        strings = strings.astype({
+            'string': str,
+            'node_type_id': small_id_dtype
+        })
+
+        # Mutate node_types into a series whose index is integer IDs and
+        # whose values are string-valued node types
+        node_types = pd.Series(node_types.index, index=node_types)
+
+        '''
+        data is currently a DataFrame with these columns:
+        [
+            'csv_row', 'item_label_id', 'string_id' 'link_type_id',
+            'item_list_position'
+        ]
+        all are integer-valued
+        '''
+
+        # If the entry syntax indicated that there should be links
+        # between an item and the string that contains it, get the
+        # string ID of the entry
+        links = data[['csv_row', 'string_id', 'link_type_id']].groupby(
+            by='csv_row',
+            group_keys=False
+        )
+        links = links.apply(shnd.Shorthand._get_item_link_source_IDs)
+        links.index = data.index.copy()
+
+        # A shorthand link is a relation between four entities
+        # represented by integer IDs:
+        #
+        # src_string_id (string representing the source end of the link)
+        # tgt_string_id (string representing the target end of the link)
+        # ref_string_id (string representing the context of the link)
+        # link_type_id (the link type)
+        #
+        # To generate these we first locate items with links to their
+        # own entry strings and then treat the entry strings as source
+        # strings.
+        has_link = ~data['link_type_id'].isna()
+
+        # The reference string for links between items and the entry
+        # containing them is the full text of the input file, which is
+        # not in the current data set, so set reference strings to null.
+        links = pd.DataFrame({
+            'src_string_id': links.loc[has_link].array,
+            'ref_string_id': pd.NA
+        })
+
+        # Get the target string, link type, and list position from the
+        # data set
+        data_cols = ['string_id', 'link_type_id', 'item_list_position']
+        links = pd.concat(
+            [links, data.loc[has_link, data_cols].reset_index(drop=True)],
+            axis='columns'
+        )
+        links = links.rename(columns={'string_id': 'tgt_string_id'})
+
+        # Every entry string in a shorthand text is also the target of a
+        # link of type 'entry' whose source is the full text of the
+        # input file. This allows direct selection of the original entry
+        # strings. The text of the input file is not in the current
+        # data set, so set the source strings to null.
+        entry_tgt_ids = data.loc[data['item_label_id'].isna(), 'string_id']
+        entry_links = pd.DataFrame({
+            'src_string_id': pd.NA,
+            'tgt_string_id': entry_tgt_ids.drop_duplicates().array,
+            'ref_string_id': pd.NA,
+            'link_type_id': link_types.loc[link_types == 'entry'].index[0],
+            'item_list_position': pd.NA
+        })
+        links = pd.concat([links, entry_links])
+
+        # The item_list_position label is probably only intelligible
+        # when handling items within entries, so rename it
+        links = links.rename(columns={'item_list_position': 'list_position'})
+
+        # Convert any item list positions into strings and make them into link
+        # tags
+        link_tags = links['list_position'].dropna().astype(str)
+
+        # Cache the node type ID for tag strings
+        tag_node_type_id = node_types.loc[node_types == 'tag'].index[0]
+
+        # Add the tag strings to the rest of the strings
+        new_strings = link_tags.drop_duplicates()
+        new_strings = shnd.util.get_new_typed_values(
+            new_strings,
+            strings,
+            'string',
+            'node_type_id',
+            tag_node_type_id
+        )
+        new_strings = pd.DataFrame(
+            {'string': new_strings.array, 'node_type_id': tag_node_type_id}
+        )
+        new_strings = shnd.util.normalize_types(new_strings, strings)
+
+        strings = pd.concat([strings, new_strings])
+
+        # convert the tag strings to string ID values
+        tag_strings = strings.loc[
+            strings['node_type_id'] == tag_node_type_id
+        ]
+        link_tags = link_tags.map(
+            pd.Series(tag_strings.index, index=tag_strings['string'])
+        )
+
+        # Relations between links and string-valued tags stored in the
+        # strings frame aren't representable as links in the links
+        # frame, so make a many-to-many frame relating link ID values to
+        # string IDs
+        link_tags = pd.DataFrame({
+            'link_id': link_tags.index,
+            'tag_string_id': link_tags.array
+        })
+
+        # Mutate item label map into string-valued series with integer index
+        item_label_id_map = pd.Series(
+            item_label_id_map.index,
+            index=item_label_id_map
+        )
+
+        return shnd.ParsedShorthand(
+            strings=strings,
+            links=links,
+            link_tags=link_tags,
+            node_types=node_types,
+            link_types=link_types,
+            entry_prefixes=None,
+            item_labels=item_label_id_map,
+            item_separator=item_separator,
+            default_entry_prefix=None,
+            space_char=self.space_char,
+            comment_char=None,
+            na_string_values=self.na_string_values,
+            na_node_type=self.na_node_type,
+            syntax_case_sensitive=self.syntax_case_sensitive
+        )
