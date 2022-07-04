@@ -1736,7 +1736,7 @@ class Shorthand:
         entry_node_type=None,
         entry_prefix=None,
         big_id_dtype=pd.Int32Dtype(),
-        small_id_dtype = pd.Int8Dtype(),
+        small_id_dtype=pd.Int8Dtype(),
         comma_separated=True,
         list_position_base=1
     ):
@@ -1778,7 +1778,7 @@ class Shorthand:
                             entry_syntax,
                             'entry_node_type'
                         )
-        
+
         elif entry_node_type is None:
             entry_node_type = shnd.util.get_single_value(
                 entry_syntax,
@@ -1821,15 +1821,16 @@ class Shorthand:
             # stack the prefixed items into a series
             disagged = data[labels_of_prefixed_items].stack()
 
-            # Split the prefixes off of the stacked items and expand into a
-            # dataframe
+            # Split the prefixes off of the stacked items and expand
+            # into a dataframe
             disagged = disagged.groupby(level=1).apply(
                 shnd.entry_parsing._item_prefix_splitter,
                 prefixed_items
             )
 
-            # drop the item labels from the multiindex so the disaggregated
-            # items align with the index of the entry group
+            # drop the item labels from the multiindex so the
+            # disaggregated items align with the index of the entry
+            # group
             disagged.index = disagged.index.droplevel(1)
 
             # pivot the disaggregated items to create a dataframe with
@@ -1837,8 +1838,8 @@ class Shorthand:
             disagged = disagged.pivot(columns=0)
             disagged.columns = disagged.columns.get_level_values(1)
 
-            # get labels of items that are not prefixed and present in this
-            # dataset
+            # get labels of items that are not prefixed and present in
+            # this dataset
             unprefixed_item_labels = [
                 label for label in entry_syntax['item_label']
                 if label.isdigit()
@@ -1854,7 +1855,8 @@ class Shorthand:
         # Replace any empty strings with null values
         data = data.mask(data == '', pd.NA)
 
-        # Regular expressions to match bare and escaped space placeholders
+        # Regular expressions to match bare and escaped space
+        # placeholders
         regex_space_char = shnd.util.escape_regex_metachars(self.space_char)
         space_plchldr_regex = r"(?<!\\)({})".format(regex_space_char)
         escaped_space_plchldr_regex = fr"(\\{regex_space_char})"
@@ -1872,8 +1874,9 @@ class Shorthand:
             regex=True
         )
 
-        # Stack data. Stacking creates a series whose values are the string
-        # values of every item in the input and whose index levels are
+        # Stack data. Stacking creates a series whose values are the
+        # string values of every item in the input and whose index
+        # levels are
         #       input index, item label
         data = data.stack()
 
@@ -1923,9 +1926,9 @@ class Shorthand:
 
         '''
         data is currently a DataFrame with these columns:
-
-            ['csv_row', 'item_label', 'string', 'node_type', 'link_type']
-
+        [
+            'csv_row', 'item_label', 'string', 'node_type', 'link_type'
+        ]
         csv_row is integer-valued, others are 'object'
         '''
 
@@ -1964,11 +1967,12 @@ class Shorthand:
 
         '''
         data is currently a DataFrame with these columns:
-
-            ['csv_row', 'item_label_id', 'string', 'node_type', 'link_type_id']
-
-        csv_row, item_label_id, and link_type_id are integer-valued, others
-        are 'object'
+        [
+            'csv_row', 'item_label_id', 'string',
+            'node_type', 'link_type_id'
+        ]
+        csv_row, item_label_id, and link_type_id are integer-valued,
+        others are 'object'
         '''
 
         # Pair item type IDs with list delimiters
@@ -1991,10 +1995,10 @@ class Shorthand:
         # Explode the delimited strings
         data = data.explode('string')
 
-        # Make a copy of the index, drop values that do not refer to delimited
-        # items, then groupby the remaining index values and do a cumulative
-        # count to get the position of each element in each item that has a list
-        # delimiter
+        # Make a copy of the index, drop values that do not refer to
+        # delimited items, then groupby the remaining index values and
+        # do a cumulative count to get the position of each element in
+        # each item that has a list delimiter
         item_list_pos = data.index
         item_list_pos = pd.Series(
             item_list_pos.array,
