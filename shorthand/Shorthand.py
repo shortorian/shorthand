@@ -1425,87 +1425,91 @@ class Shorthand:
 
         links = pd.concat([links, new_links])
 
-        # If a link syntax was present, process link tags
+        # PROCESS LINK TAGS
+
+        # If there was link metadata, get tag strings out of it
         try:
-            assert self.link_syntax
+            assert link_metadata.loc
 
             # Extract the link tags from the link metadata with a
             # regular expression
             link_tag_regex = rf"lt{regex_item_separator}\S+"
-            tags = link_metadata.str.replace(
+            link_tags = link_metadata.str.replace(
                 link_tag_regex,
                 '',
                 n=1,
                 regex=True
             )
-            tags = tags.loc[tags != '']
+            link_tags = link_tags.loc[link_tags != '']
 
-            # Convert any one-to-one link target list positions into strings
-            # and append them to the tag strings
-            list_pos = links['list_position'].dropna().astype(str)
-            has_list_pos_and_tags = list_pos.index.intersection(tags.index)
-            list_pos_but_no_tags = list_pos.index.difference(tags.index)
+        # If there was no link metadata, we currently have no link tags
+        except NameError:
+            link_tags = pd.Series(dtype='object')
 
-            if has_list_pos_and_tags.empty:
-                tags = pd.concat([tags, list_pos])
+        # Convert any item list positions into strings and append them
+        # to the link tag strings
+        list_pos = links['list_position'].dropna().astype(str)
+        has_list_pos_and_tags = list_pos.index.intersection(link_tags.index)
+        list_pos_but_no_tags = list_pos.index.difference(link_tags.index)
 
-            elif list_pos.difference(has_list_pos_and_tags).empty:
-                tags.loc[list_pos.index] = [
-                    ' '.join(pair) for pair in
-                    zip(tags.loc[list_pos.index], list_pos)
-                ]
+        if has_list_pos_and_tags.empty:
+            link_tags = pd.concat([link_tags, list_pos])
 
-            else:
-                pairs = zip(
-                    tags.loc[has_list_pos_and_tags],
-                    list_pos.loc[has_list_pos_and_tags]
-                )
-                tags.loc[has_list_pos_and_tags] = [
-                    ' '.join(pair) for pair in pairs
-                ]
-
-                tags = pd.concat([tags, list_pos.loc[list_pos_but_no_tags]])
-
-            # Convert the space-delimited tag strings to lists of strings
-            tags = tags.str.split().explode()
-
-            # Add the tag strings to the rest of the strings
-            new_strings = tags.drop_duplicates()
-            new_strings = shnd.util.get_new_typed_values(
-                new_strings,
-                strings,
-                'string',
-                'node_type_id',
-                tag_node_type_id
-            )
-            new_strings = pd.DataFrame(
-                {'string': new_strings.array, 'node_type_id': tag_node_type_id}
-            )
-            new_strings = shnd.util.normalize_types(new_strings, strings)
-
-            strings = pd.concat([strings, new_strings])
-
-            # convert the tag strings to string ID values
-            tag_strings = strings.loc[
-                strings['node_type_id'] == tag_node_type_id
+        elif list_pos.difference(has_list_pos_and_tags).empty:
+            link_tags.loc[list_pos.index] = [
+                ' '.join(pair) for pair in
+                zip(link_tags.loc[list_pos.index], list_pos)
             ]
-            tags = tags.map(
-                pd.Series(tag_strings.index, index=tag_strings['string'])
+
+        else:
+            pairs = zip(
+                link_tags.loc[has_list_pos_and_tags],
+                list_pos.loc[has_list_pos_and_tags]
             )
+            link_tags.loc[has_list_pos_and_tags] = [
+                ' '.join(pair) for pair in pairs
+            ]
 
-            # Relations between links and string-valued tags stored in the
-            # strings frame aren't representable as links in the links
-            # frame, so make a many-to-many frame relating link ID values to
-            # string IDs
-            link_tags = pd.DataFrame({
-                'link_id': tags.index,
-                'tag_string_id': tags.array
-            })
+            link_tags = pd.concat([
+                link_tags,
+                list_pos.loc[list_pos_but_no_tags]
+            ])
 
-        except AttributeError:
-            # Assume an attribute error was generated when asserting a
-            # link syntax. If it wasn't present, link_tags is empty.
-            link_tags = pd.DataFrame(columns=['link_id', 'tag_string_id'])
+        # Convert the space-delimited tag strings to lists of strings
+        link_tags = link_tags.str.split().explode()
+
+        # Add the tag strings to the rest of the strings
+        new_strings = link_tags.drop_duplicates()
+        new_strings = shnd.util.get_new_typed_values(
+            new_strings,
+            strings,
+            'string',
+            'node_type_id',
+            tag_node_type_id
+        )
+        new_strings = pd.DataFrame(
+            {'string': new_strings.array, 'node_type_id': tag_node_type_id}
+        )
+        new_strings = shnd.util.normalize_types(new_strings, strings)
+
+        strings = pd.concat([strings, new_strings])
+
+        # convert the tag strings to string ID values
+        tag_strings = strings.loc[
+            strings['node_type_id'] == tag_node_type_id
+        ]
+        link_tags = link_tags.map(
+            pd.Series(tag_strings.index, index=tag_strings['string'])
+        )
+
+        # Relations between links and string-valued tags stored in the
+        # strings frame aren't representable as links in the links
+        # frame, so make a many-to-many frame relating link ID values to
+        # string IDs
+        link_tags = pd.DataFrame({
+            'link_id': link_tags.index,
+            'tag_string_id': link_tags.array
+        })
 
         '''************
         Done with tags.
