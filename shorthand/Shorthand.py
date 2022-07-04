@@ -1429,7 +1429,7 @@ class Shorthand:
 
         # If there was link metadata, get tag strings out of it
         try:
-            assert link_metadata.loc
+            assert link_metadata.empty is False
 
             # Extract the link tags from the link metadata with a
             # regular expression
@@ -1443,7 +1443,7 @@ class Shorthand:
             link_tags = link_tags.loc[link_tags != '']
 
         # If there was no link metadata, we currently have no link tags
-        except NameError:
+        except (NameError, AssertionError):
             link_tags = pd.Series(dtype='object')
 
         # Convert any item list positions into strings and append them
