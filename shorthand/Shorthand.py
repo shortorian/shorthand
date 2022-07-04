@@ -2023,8 +2023,8 @@ class Shorthand:
         '''
         data is currently a DataFrame with these columns:
         [
-            'csv_row', 'item_label_id', 'string', 'node_type', 'link_type_id',
-            'item_list_position'
+            'csv_row', 'item_label_id', 'string', 'node_type',
+            'link_type_id', 'item_list_position'
         ]
         string and node_type are 'object' dtype, others are integer
         '''
@@ -2142,8 +2142,8 @@ class Shorthand:
         # when handling items within entries, so rename it
         links = links.rename(columns={'item_list_position': 'list_position'})
 
-        # Convert any item list positions into strings and make them into link
-        # tags
+        # Convert any item list positions into strings and make them
+        # into link tags
         link_tags = links['list_position'].dropna().astype(str)
 
         # Cache the node type ID for tag strings
@@ -2182,7 +2182,8 @@ class Shorthand:
             'tag_string_id': link_tags.array
         })
 
-        # Mutate item label map into string-valued series with integer index
+        # Mutate item label map into string-valued series with integer
+        # index
         item_label_id_map = pd.Series(
             item_label_id_map.index,
             index=item_label_id_map
