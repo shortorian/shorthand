@@ -1933,7 +1933,7 @@ class Shorthand:
         '''
 
         # Map string-valued item labels to integer IDs
-        item_label_id_map = shnd.Shorthand._create_id_map(
+        item_label_id_map = _create_id_map(
             data['item_label'],
             dtype=small_id_dtype
         )
@@ -1950,7 +1950,7 @@ class Shorthand:
         link_types = pd.Series(['entry', 'tagged', 'requires'])
 
         # Map string-valued link types to integer IDs
-        link_types = shnd.Shorthand._create_id_map(
+        link_types = _create_id_map(
             pd.concat([link_types, data['link_type']]),
             dtype=small_id_dtype
         )
@@ -2056,7 +2056,7 @@ class Shorthand:
         ])
 
         # Map string-valued node types to integer IDs
-        node_types = shnd.Shorthand._create_id_map(
+        node_types = _create_id_map(
             pd.concat([node_types, strings['node_type']]),
             dtype=small_id_dtype
         )
@@ -2090,7 +2090,7 @@ class Shorthand:
             by='csv_row',
             group_keys=False
         )
-        links = links.apply(shnd.Shorthand._get_item_link_source_IDs)
+        links = links.apply(_get_item_link_source_IDs)
         links.index = data.index.copy()
 
         # A shorthand link is a relation between four entities
