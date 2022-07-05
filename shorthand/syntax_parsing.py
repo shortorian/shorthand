@@ -93,7 +93,7 @@ class EntrySyntaxError(ValueError):
     pass
 
 
-def _validate_entry_syntax_prefix_group(group, allow_duplicate_items):
+def _validate_entry_syntax_prefix_group(group, allow_redundant_items):
 
     shnd.util.get_single_value(
         group,
@@ -194,7 +194,7 @@ def _validate_entry_syntax_prefix_group(group, allow_duplicate_items):
 
     item_data = ['item_node_type', 'item_link_type']
     duplicate_items = group[item_data].dropna(how='all').duplicated().any()
-    if duplicate_items and not allow_duplicate_items:
+    if duplicate_items and not allow_redundant_items:
         raise EntrySyntaxError(
             'Error parsing syntax for entry prefix {}. Each row '
             'within a prefix group must have a unique pair of '
@@ -206,7 +206,7 @@ def _validate_entry_syntax_prefix_group(group, allow_duplicate_items):
 def validate_entry_syntax(
     entry_syntax,
     case_sensitive,
-    allow_duplicate_items=False
+    allow_redundant_items=False
 ):
 
     try:
@@ -266,12 +266,12 @@ def validate_entry_syntax(
     if has_prefix and entry_syntax['entry_prefix'].notna().any():
         entry_syntax.groupby('entry_prefix').apply(
             _validate_entry_syntax_prefix_group,
-            allow_duplicate_items
+            allow_redundant_items
         )
     else:
         dummy = entry_syntax.copy()
         dummy.name = 'None'
-        _validate_entry_syntax_prefix_group(dummy, allow_duplicate_items)
+        _validate_entry_syntax_prefix_group(dummy, allow_redundant_items)
 
     return entry_syntax
 

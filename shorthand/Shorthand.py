@@ -588,7 +588,7 @@ class Shorthand:
         na_string_values=['!'],
         na_node_type='missing',
         syntax_case_sensitive=True,
-        allow_duplicate_items=False
+        allow_redundant_items=False
     ):
 
         try:
@@ -606,7 +606,7 @@ class Shorthand:
         entry_syntax = shnd.syntax_parsing.validate_entry_syntax(
             self.entry_syntax,
             case_sensitive=syntax_case_sensitive,
-            allow_duplicate_items=allow_duplicate_items
+            allow_redundant_items=allow_redundant_items
         )
 
         msg = (
