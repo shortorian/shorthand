@@ -266,7 +266,7 @@ def validate_entry_syntax(
     if has_prefix and entry_syntax['entry_prefix'].notna().any():
         entry_syntax.groupby('entry_prefix').apply(
             _validate_entry_syntax_prefix_group,
-            args=(allow_duplicate_items,)
+            allow_duplicate_items
         )
     else:
         dummy = entry_syntax.copy()
