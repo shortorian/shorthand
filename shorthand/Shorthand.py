@@ -587,7 +587,8 @@ class Shorthand:
         space_char=None,
         na_string_values=['!'],
         na_node_type='missing',
-        syntax_case_sensitive=True
+        syntax_case_sensitive=True,
+        allow_duplicate_items=False
     ):
 
         try:
@@ -604,11 +605,12 @@ class Shorthand:
         # Validate the entry syntax
         entry_syntax = shnd.syntax_parsing.validate_entry_syntax(
             self.entry_syntax,
-            case_sensitive=syntax_case_sensitive
+            case_sensitive=syntax_case_sensitive,
+            allow_duplicate_items=allow_duplicate_items
         )
 
         msg = (
-            'Column "{}" not found in entry syntax. Must use the "{}" '
+            'Column "{0}" not found in entry syntax. Must use the "{0}" '
             'keyword when calling Shorthand().'
         )
 

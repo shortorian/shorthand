@@ -93,7 +93,7 @@ class EntrySyntaxError(ValueError):
     pass
 
 
-def _validate_entry_syntax_prefix_group(group):
+def _validate_entry_syntax_prefix_group(group, allow_duplicate_items):
 
     shnd.util.get_single_value(
         group,
@@ -193,7 +193,8 @@ def _validate_entry_syntax_prefix_group(group):
         )
 
     item_data = ['item_node_type', 'item_link_type']
-    if group[item_data].dropna(how='all').duplicated().any():
+    duplicate_items = group[item_data].dropna(how='all').duplicated().any()
+    if duplicate_items and not allow_duplicate_items:
         raise EntrySyntaxError(
             'Error parsing syntax for entry prefix {}. Each row '
             'within a prefix group must have a unique pair of '
@@ -202,7 +203,11 @@ def _validate_entry_syntax_prefix_group(group):
         )
 
 
-def validate_entry_syntax(entry_syntax, case_sensitive):
+def validate_entry_syntax(
+    entry_syntax,
+    case_sensitive,
+    allow_duplicate_items=False
+):
 
     try:
         assert entry_syntax.casefold
@@ -234,7 +239,9 @@ def validate_entry_syntax(entry_syntax, case_sensitive):
 
     if not case_sensitive:
         # Normalize all values with unicode casefold
-        entry_syntax = entry_syntax.apply(lambda x: x.str.casefold())
+        entry_syntax = entry_syntax.apply(
+            lambda x: x.str.casefold() if x.notna().any() else x
+        )
 
     if entry_syntax['item_label'].isna().any():
         raise ValueError(
@@ -242,9 +249,29 @@ def validate_entry_syntax(entry_syntax, case_sensitive):
             'column "item_label"'
         )
 
-    entry_syntax.groupby('entry_prefix').apply(
-        _validate_entry_syntax_prefix_group
-    )
+    optional_cols = [
+        'list_delimiter', 'item_prefix_separator', 'item_prefixes'
+    ]
+    add_cols = [
+        col for col in optional_cols if col not in entry_syntax.columns
+    ]
+    entry_syntax = pd.concat(
+        [
+            entry_syntax,
+            pd.DataFrame(columns=add_cols, index=entry_syntax.index)
+        ],
+        axis='columns')
+
+    has_prefix = ('entry_prefix' in entry_syntax.columns)
+    if has_prefix and entry_syntax['entry_prefix'].notna().any():
+        entry_syntax.groupby('entry_prefix').apply(
+            _validate_entry_syntax_prefix_group,
+            args=(allow_duplicate_items,)
+        )
+    else:
+        dummy = entry_syntax.copy()
+        dummy.name = 'None'
+        _validate_entry_syntax_prefix_group(dummy, allow_duplicate_items)
 
     return entry_syntax
 
