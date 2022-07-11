@@ -286,7 +286,7 @@ def _get_item_link_source_IDs(group):
     # If all the link types are NA then there are no links between items
     # inside this entry and the entry string itself
     if link_type_is_na.all():
-        return pd.Series([pd.NA]*len(group))
+        return pd.Series([pd.NA]*len(group), index=group.index)
 
     # If any link types are not null then return the string_id of the
     # entry the items were exploded from
@@ -298,7 +298,7 @@ def _get_item_link_source_IDs(group):
     # will break.
     else:
         entry_string_id = group.loc[link_type_is_na, 'string_id'].squeeze()
-        return pd.Series([entry_string_id]*len(group))
+        return pd.Series([entry_string_id]*len(group), index=group.index)
 
 
 def _get_entry_prefix_ids(
@@ -582,11 +582,6 @@ class Shorthand:
         self,
         entry_syntax,
         link_syntax=None,
-        item_separator=None,
-        default_entry_prefix=None,
-        space_char=None,
-        na_string_values=['!'],
-        na_node_type='missing',
         syntax_case_sensitive=True,
         allow_redundant_items=False
     ):
@@ -600,8 +595,6 @@ class Shorthand:
             with open(entry_syntax, 'r') as f:
                 self.entry_syntax = f.read()
 
-        self.syntax_case_sensitive = syntax_case_sensitive
-
         # Validate the entry syntax
         entry_syntax = shnd.syntax_parsing.validate_entry_syntax(
             self.entry_syntax,
@@ -609,32 +602,8 @@ class Shorthand:
             allow_redundant_items=allow_redundant_items
         )
 
-        msg = (
-            'Column "{0}" not found in entry syntax. Must use the "{0}" '
-            'keyword when calling Shorthand().'
-        )
-
-        if item_separator is None:
-            if 'item_separator' not in entry_syntax.columns:
-                raise ValueError(msg.format('item_separator'))
-
-            item_separator = shnd.util.get_single_value(
-                entry_syntax,
-                'item_separator'
-            )
-
-        self.item_separator = item_separator
-
-        if default_entry_prefix is None:
-            if 'default_entry_prefix' not in entry_syntax.columns:
-                raise ValueError(msg.format('default_entry_prefix'))
-
-            default_entry_prefix = shnd.util.get_single_value(
-                entry_syntax,
-                'default_entry_prefix'
-            )
-
-        self.default_entry_prefix = default_entry_prefix
+        self.syntax_case_sensitive = syntax_case_sensitive
+        self.allow_redundant_items = allow_redundant_items
 
         if link_syntax is not None:
 
@@ -655,24 +624,14 @@ class Shorthand:
                 case_sensitive=self.syntax_case_sensitive
             )
 
-        if space_char is not None:
-            space_char = str(space_char)
-
-            if len(space_char) > 1:
-                raise ValueError('space_char must be a single character')
-
-        self.space_char = space_char
-
-        if shnd.util.iterable_not_string(na_string_values):
-            self.na_string_values = na_string_values
-        else:
-            self.na_string_values = [na_string_values]
-
-        self.na_node_type = na_node_type
-
     def _apply_syntax(
         self,
         filepath_or_buffer,
+        item_separator,
+        default_entry_prefix,
+        space_char,
+        na_string_values,
+        na_node_type,
         skiprows,
         comment_char,
         fill_cols,
@@ -856,17 +815,18 @@ class Shorthand:
         # Read the entry syntax
         entry_syntax = shnd.syntax_parsing.validate_entry_syntax(
             self.entry_syntax,
-            case_sensitive=self.syntax_case_sensitive
+            case_sensitive=self.syntax_case_sensitive,
+            allow_redundant_items=self.allow_redundant_items
         )
 
         # Parse entries in the input text
         data = shnd.entry_parsing.parse_entries(
             data,
             entry_syntax,
-            self.item_separator,
-            self.default_entry_prefix,
-            self.space_char,
-            self.na_string_values
+            item_separator,
+            default_entry_prefix,
+            space_char,
+            na_string_values
         )
         data = data.reset_index()
         data = data.rename(
@@ -879,12 +839,12 @@ class Shorthand:
         )
         # replace missing entry prefixes with default value
         prefix_isna = data['entry_prefix'].isna()
-        data.loc[prefix_isna, 'entry_prefix'] = self.default_entry_prefix
+        data.loc[prefix_isna, 'entry_prefix'] = default_entry_prefix
 
         # For any strings that represent null values, overwrite the node
         # type inferred from the syntax with the null node type
-        null_strings = data['string'].isin(self.na_string_values)
-        data.loc[null_strings, 'node_type'] = self.na_node_type
+        null_strings = data['string'].isin(na_string_values)
+        data.loc[null_strings, 'node_type'] = na_node_type
 
         dtypes = {
             'csv_row': big_id_dtype,
@@ -1289,7 +1249,7 @@ class Shorthand:
             # Escape any regex metacharacters in the item separator so
             # we can use it in regular expressions
             regex_item_separator = shnd.util.escape_regex_metachars(
-                self.item_separator
+                item_separator
             )
 
             # Extract the link type overrides from the link metadata
@@ -1300,7 +1260,7 @@ class Shorthand:
             link_type_overrides = link_type_overrides.stack().dropna()
             link_type_overrides.index = link_type_overrides.index.droplevel(1)
             link_type_overrides = link_type_overrides.str.split(
-                self.item_separator,
+                item_separator,
                 expand=True
             )
 
@@ -1536,20 +1496,26 @@ class Shorthand:
             link_types=link_types,
             entry_prefixes=entry_prefix_id_map,
             item_labels=item_label_id_map,
-            item_separator=self.item_separator,
-            default_entry_prefix=self.default_entry_prefix,
-            space_char=self.space_char,
+            item_separator=item_separator,
+            default_entry_prefix=default_entry_prefix,
+            space_char=space_char,
             comment_char=comment_char,
-            na_string_values=self.na_string_values,
-            na_node_type=self.na_node_type,
-            syntax_case_sensitive=self.syntax_case_sensitive
+            na_string_values=na_string_values,
+            na_node_type=na_node_type,
+            syntax_case_sensitive=self.syntax_case_sensitive,
+            allow_redundant_items=self.allow_redundant_items
         )
 
     def parse_text(
         self,
         filepath_or_buffer,
-        skiprows,
-        comment_char,
+        item_separator,
+        default_entry_prefix,
+        space_char,
+        na_string_values,
+        na_node_type,
+        skiprows=0,
+        comment_char='#',
         fill_cols='left_entry',
         drop_na='right_entry',
         big_id_dtype=pd.Int32Dtype(),
@@ -1581,6 +1547,15 @@ class Shorthand:
         # Hash the input text so we can validate it when we read it back
         with open(filepath_or_buffer, 'r') as f:
             input_hash = hash(f.read())
+
+        if space_char is not None:
+            space_char = str(space_char)
+
+            if len(space_char) > 1:
+                raise ValueError('space_char must be a single character')
+
+        if not shnd.util.iterable_not_string(na_string_values):
+            na_string_values = [na_string_values]
 
         comment_char = str(comment_char)
         if len(comment_char) > 1:
@@ -1619,6 +1594,11 @@ class Shorthand:
         # Parse input text
         parsed = self._apply_syntax(
             filepath_or_buffer,
+            item_separator,
+            default_entry_prefix,
+            space_char,
+            na_string_values,
+            na_node_type,
             skiprows,
             comment_char,
             fill_cols,
@@ -1735,6 +1715,10 @@ class Shorthand:
     def parse_items(
         self,
         data,
+        space_char,
+        na_string_values,
+        na_node_type,
+        item_separator=None,
         entry_node_type=None,
         entry_prefix=None,
         big_id_dtype=pd.Int32Dtype(),
@@ -1743,10 +1727,22 @@ class Shorthand:
         list_position_base=1
     ):
 
+        data = data.reset_index(drop=True)
+
         entry_syntax = shnd.syntax_parsing.validate_entry_syntax(
             self.entry_syntax,
-            case_sensitive=self.syntax_case_sensitive
+            case_sensitive=self.syntax_case_sensitive,
+            allow_redundant_items=self.allow_redundant_items
         )
+
+        if space_char is not None:
+            space_char = str(space_char)
+
+            if len(space_char) > 1:
+                raise ValueError('space_char must be a single character')
+
+        if not shnd.util.iterable_not_string(na_string_values):
+            na_string_values = [na_string_values]
 
         if 'entry_prefix' in entry_syntax.columns:
             try:
@@ -1787,10 +1783,30 @@ class Shorthand:
                 'entry_node_type'
             )
 
+        # create a map from item labels included in the entry syntax to
+        # node types and link types
+        item_types = pd.DataFrame(
+            {
+                'node_type': entry_syntax['item_node_type'].array,
+                'link_type': entry_syntax['item_link_type'].array
+            },
+            index=entry_syntax['item_label'].array
+        )
+        common_labels = [
+            lbl for lbl in data.columns if lbl in item_types.index
+        ]
+        item_types = item_types.loc[common_labels]
+
+        # drop data columns not mentioned in the syntax
+        data = data[common_labels]
+
         if comma_separated:
             item_separator = '", "'
-        else:
-            item_separator = self.item_separator
+        elif item_separator is None:
+            raise ValueError(
+                'If comma_separated is not True, provide a separator '
+                'with the item_separator keyword argument.'
+            )
 
         entries = data.apply(
             lambda x: item_separator.join(map(str, x)),
@@ -1808,8 +1824,8 @@ class Shorthand:
 
         # Replace NA values and empty strings with the first string in
         # na_string_values
-        data = data.fillna(self.na_string_values[0])
-        data = data.replace('', self.na_string_values[0])
+        data = data.fillna(na_string_values[0])
+        data = data.replace('', na_string_values[0])
 
         # items with no node type in the entry syntax are prefixed to
         # indicate which node type they correspond to
@@ -1859,7 +1875,7 @@ class Shorthand:
 
         # Regular expressions to match bare and escaped space
         # placeholders
-        regex_space_char = shnd.util.escape_regex_metachars(self.space_char)
+        regex_space_char = shnd.util.escape_regex_metachars(space_char)
         space_plchldr_regex = r"(?<!\\)({})".format(regex_space_char)
         escaped_space_plchldr_regex = fr"(\\{regex_space_char})"
 
@@ -1882,34 +1898,22 @@ class Shorthand:
         #       input index, item label
         data = data.stack()
 
-        # create a map from item labels to node types and link types
-        item_types = pd.DataFrame(
-            {
-                'node_type': entry_syntax['item_node_type'].array,
-                'link_type': entry_syntax['item_link_type'].array
-            },
-            index=entry_syntax['item_label'].array
-        )
-        item_types = item_types.loc[data.index.get_level_values(1)]
-
-        data = pd.concat([data.rename('string'), item_types], axis=1)
-        # data = _set_StringDtype(data)
-
         data = data.reset_index()
         data = data.rename(
             columns={
                 'level_0': 'csv_row',
-                'level_1': 'item_label'
+                'level_1': 'item_label',
+                0: 'string'
             }
         )
-
+        data = data.merge(item_types, left_on='item_label', right_index=True)
         # Concatenate expanded items with the entries
-        data = pd.concat([data, entries]).sort_index().fillna(pd.NA)
+        data = pd.concat([data, entries]).fillna(pd.NA)
 
         # For any strings that represent null values, overwrite the node
         # type inferred from the syntax with the null node type
-        null_strings = data['string'].isin(self.na_string_values)
-        data.loc[null_strings, 'node_type'] = self.na_node_type
+        null_strings = data['string'].isin(na_string_values)
+        data.loc[null_strings, 'node_type'] = na_node_type
 
         dtypes = {
             'csv_row': big_id_dtype,
@@ -1933,7 +1937,6 @@ class Shorthand:
         ]
         csv_row is integer-valued, others are 'object'
         '''
-
         # Map string-valued item labels to integer IDs
         item_label_id_map = _create_id_map(
             data['item_label'],
@@ -1977,12 +1980,11 @@ class Shorthand:
         others are 'object'
         '''
 
-        # Pair item type IDs with list delimiters
-        delimiters = entry_syntax[['item_label', 'list_delimiter']].copy()
-        delimiters['item_label'] = delimiters['item_label'].map(
-            item_label_id_map
+        # Make a map from item label IDs and list delimiters
+        delimiters = pd.Series(
+            entry_syntax['list_delimiter'].array,
+            index=entry_syntax['item_label'].map(item_label_id_map)
         )
-        delimiters = delimiters.rename(columns={'item_label': 'item_label_id'})
 
         # Split items by delimiter
         data = data.groupby(by='item_label_id', dropna=False)
@@ -1995,18 +1997,17 @@ class Shorthand:
         item_not_delimited = data.loc[~item_is_delimited].index
 
         # Explode the delimited strings
-        data = data.explode('string')
+        data = data.explode('string').reset_index()
 
         # Make a copy of the index, drop values that do not refer to
         # delimited items, then groupby the remaining index values and
         # do a cumulative count to get the position of each element in
         # each item that has a list delimiter
-        item_list_pos = data.index
-        item_list_pos = pd.Series(
-            item_list_pos.array,
-            index=item_list_pos,
-            dtype=small_id_dtype
-        )
+        item_list_pos = data['index'].copy()
+        # item_list_pos = pd.Series(
+        #     item_list_pos.array,
+        #     index=item_list_pos
+        # )
 
         item_list_pos.loc[item_list_pos.isin(item_not_delimited)] = pd.NA
         item_list_pos = item_list_pos.dropna().groupby(item_list_pos.dropna())
@@ -2016,11 +2017,12 @@ class Shorthand:
         item_list_pos = item_list_pos + list_position_base
 
         item_list_pos = item_list_pos.astype(small_id_dtype)
-
         # Store the item list positions and reset the index
-        item_list_pos = item_list_pos.array
-        data.loc[item_is_delimited, 'item_list_position'] = item_list_pos
-        data = data.reset_index(drop=True)
+        data = data.drop('index', axis='columns')
+        data = pd.concat(
+            [data, item_list_pos.rename('item_list_position')],
+            axis=1
+        )
 
         '''
         data is currently a DataFrame with these columns:
@@ -2085,14 +2087,22 @@ class Shorthand:
         all are integer-valued
         '''
 
+        data = data.sort_values('csv_row')
+
         # If the entry syntax indicated that there should be links
         # between an item and the string that contains it, get the
         # string ID of the entry
-        links = data[['csv_row', 'string_id', 'link_type_id']].groupby(
-            by='csv_row',
-            group_keys=False
-        )
-        links = links.apply(_get_item_link_source_IDs)
+        if len(data['csv_row'].unique()) > 1:
+            links = data[['csv_row', 'string_id', 'link_type_id']].groupby(
+                by='csv_row',
+                group_keys=False
+            )
+            links = links.apply(_get_item_link_source_IDs)
+        else:
+            link_type_is_na = data['link_type_id'].isna()
+            entry_string_id = data.loc[link_type_is_na, 'string_id'].squeeze()
+            links = pd.Series([entry_string_id]*len(data))
+
         links.index = data.index.copy()
 
         # A shorthand link is a relation between four entities
@@ -2138,7 +2148,7 @@ class Shorthand:
             'link_type_id': link_types.loc[link_types == 'entry'].index[0],
             'item_list_position': pd.NA
         })
-        links = pd.concat([links, entry_links])
+        links = pd.concat([links, entry_links]).reset_index(drop=True)
 
         # The item_list_position label is probably only intelligible
         # when handling items within entries, so rename it
@@ -2201,9 +2211,10 @@ class Shorthand:
             item_labels=item_label_id_map,
             item_separator=item_separator,
             default_entry_prefix=None,
-            space_char=self.space_char,
+            space_char=space_char,
             comment_char=None,
-            na_string_values=self.na_string_values,
-            na_node_type=self.na_node_type,
-            syntax_case_sensitive=self.syntax_case_sensitive
+            na_string_values=na_string_values,
+            na_node_type=na_node_type,
+            syntax_case_sensitive=self.syntax_case_sensitive,
+            allow_redundant_items=self.allow_redundant_items
         )

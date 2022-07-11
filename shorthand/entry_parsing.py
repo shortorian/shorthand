@@ -400,7 +400,11 @@ def _expand_csv_items(group, delimiters):
     '''
 
     item_label_id = group.name
-    delimiter = delimiters.loc[item_label_id, 'list_delimiter']
+
+    if pd.isna(item_label_id):
+        return group
+
+    delimiter = delimiters.loc[item_label_id]
 
     if pd.isna(delimiter):
         return group

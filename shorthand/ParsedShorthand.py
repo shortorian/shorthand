@@ -375,7 +375,8 @@ class ParsedShorthand:
             comment_char,
             na_string_values,
             na_node_type,
-            syntax_case_sensitive
+            syntax_case_sensitive,
+            allow_redundant_items
     ):
 
         [self.__setattr__(k, v) for k, v in locals().items() if k != 'self']
@@ -661,7 +662,7 @@ class ParsedShorthand:
 
         return resolved
 
-    def synthesize_entries(
+    def synthesize_shorthand_entries(
         self,
         entry_prefix=None,
         entry_node_type=None,
