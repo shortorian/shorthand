@@ -7,21 +7,21 @@ def test_manual_annotation_wrk_synthesis():
     s = shnd.Shorthand(
         entry_syntax="shorthand/resources/default_entry_syntax.csv",
         link_syntax="shorthand/resources/default_link_syntax.csv",
-        item_separator='__',
-        default_entry_prefix='wrk',
-        space_char='|',
-        na_string_values='!',
-        na_node_type='missing',
         syntax_case_sensitive=False
     )
 
     parsed = s.parse_text(
         'shorthand/test_data/manual_annotation.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
         skiprows=2,
         comment_char='#'
     )
 
-    synthesized = parsed.synthesize_entries('wrk', fill_spaces=True)
+    synthesized = parsed.synthesize_shorthand_entries('wrk', fill_spaces=True)
 
     check = pd.Series([
         'asmith_bwu__1999__s_bams__101__803__xxx',
@@ -40,16 +40,16 @@ def test_manual_annotation_note_synthesis():
     s = shnd.Shorthand(
         entry_syntax="shorthand/resources/default_entry_syntax.csv",
         link_syntax="shorthand/resources/default_link_syntax.csv",
-        item_separator='__',
-        default_entry_prefix='wrk',
-        space_char='|',
-        na_string_values='!',
-        na_node_type='missing',
         syntax_case_sensitive=False
     )
 
     parsed = s.parse_text(
         'shorthand/test_data/manual_annotation.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
         skiprows=2,
         comment_char='#'
     )
@@ -69,16 +69,16 @@ def test_single_column_wrk_synthesis():
     s = shnd.Shorthand(
         entry_syntax="shorthand/resources/default_entry_syntax.csv",
         link_syntax="shorthand/resources/default_link_syntax.csv",
-        item_separator='__',
-        default_entry_prefix='wrk',
-        space_char='|',
-        na_string_values='!',
-        na_node_type='missing',
         syntax_case_sensitive=False
     )
 
     parsed = s.parse_text(
         'shorthand/test_data/single_column.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
         skiprows=0,
         comment_char='#',
         drop_na=False
