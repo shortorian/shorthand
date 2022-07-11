@@ -54,7 +54,7 @@ def test_manual_annotation_note_synthesis():
         comment_char='#'
     )
 
-    synthesized = parsed.synthesize_entries(entry_node_type='note')
+    synthesized = parsed.synthesize_shorthand_entries(entry_node_type='note')
 
     check = pd.Series([
         'this is an article I made up for testing',
@@ -84,7 +84,7 @@ def test_single_column_wrk_synthesis():
         drop_na=False
     )
 
-    synthesized = parsed.synthesize_entries('wrk', fill_spaces=True)
+    synthesized = parsed.synthesize_shorthand_entries('wrk', fill_spaces=True)
 
     check = pd.Series([
         'asmith_bwu__1999__s_bams__101__803__xxx',
