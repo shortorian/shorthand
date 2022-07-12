@@ -1719,6 +1719,7 @@ class Shorthand:
         na_string_values,
         na_node_type,
         item_separator=None,
+        entry_writer=None,
         entry_node_type=None,
         entry_prefix=None,
         big_id_dtype=pd.Int32Dtype(),
@@ -1797,24 +1798,31 @@ class Shorthand:
         ]
         item_types = item_types.loc[common_labels]
 
-        # drop data columns not mentioned in the syntax
-        data = data[common_labels]
+        if entry_writer is None:
 
-        if comma_separated:
-            item_separator = '", "'
-        elif item_separator is None:
-            raise ValueError(
-                'If comma_separated is not True, provide a separator '
-                'with the item_separator keyword argument.'
+            if comma_separated:
+                item_separator = '", "'
+            elif item_separator is None:
+                raise ValueError(
+                    'If comma_separated is not True, provide a '
+                    'separator with the item_separator keyword '
+                    'argument.'
+                )
+
+            entries = data.apply(
+                lambda x: item_separator.join(map(str, x)),
+                axis=1
             )
 
-        entries = data.apply(
-            lambda x: item_separator.join(map(str, x)),
-            axis=1
-        )
+            if comma_separated:
+                entries = entries.apply(lambda x: '"' + x + '"')
 
-        if comma_separated:
-            entries = entries.apply(lambda x: '"' + x + '"')
+        else:
+
+            entries = data.apply(entry_writer, axis='columns')
+
+        # drop data columns not mentioned in the syntax
+        data = data[common_labels]
 
         entries = pd.DataFrame({
             'string': entries.array,
