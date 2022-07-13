@@ -25,7 +25,6 @@ def test_parsed_manual_annotation_resolve_links_has_no_nans():
     assert (~parsed.resolve_links().isna()).any().any()
 
 
-
 def test_manual_annotation_wrk_synthesis():
 
     s = shnd.Shorthand(
@@ -143,4 +142,41 @@ def test_parsed_bibtex_items_resolve_links_has_no_nans():
         na_node_type='missing'
     )
 
-    parsed.resolve_links().isna().any(axis=None)
+    assert (~parsed.resolve_links().isna()).any().any()
+
+
+def test_bibtex_identifier_parsing():
+
+    bibtex_parser = BibTexParser(common_strings=True)
+    with open("shorthand/test_data/bibtex_test_data_short.bib", encoding='utf8') as f:
+        bibdatabase = bibtex_parser.parse_file(f)
+
+    data = pd.DataFrame(bibdatabase.entries)
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_bibtex_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    parsed = s.parse_items(
+        data,
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing'
+    )
+
+    parsed_identifiers = parsed.strings.query('node_type_id == 8')
+
+    check = pd.Series([
+        '10.1038/194638b0',
+        '10.1175/1520-0493(1962)090<0311:OTOKEB>2.0.CO;2',
+        '10.3402/tellusa.v14i3.9551',
+        '10.1175/1520-0477-43.9.451',
+        '10.3402/tellusa.v14i4.9569',
+        '10.1007/BF02317953',
+        '10.1007/BF02247180',
+        '10.1029/JZ068i011p03345',
+        '10.1029/JZ068i009p02375',
+    ])
+
+    assert (check == parsed_identifiers['string'].array).all()
