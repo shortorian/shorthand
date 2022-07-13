@@ -2,6 +2,29 @@ import pandas as pd
 import shorthand as shnd
 
 
+def test_parsed_manual_annotation_resolve_links_has_no_nans():
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_entry_syntax.csv",
+        link_syntax="shorthand/resources/default_link_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    parsed = s.parse_text(
+        'shorthand/test_data/manual_annotation.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
+        skiprows=2,
+        comment_char='#'
+    )
+
+    assert (~parsed.resolve_links().isna()).any().any()
+
+
+
 def test_manual_annotation_wrk_synthesis():
 
     s = shnd.Shorthand(
@@ -96,3 +119,6 @@ def test_single_column_wrk_synthesis():
     ])
 
     assert (check == synthesized).all()
+
+
+def test_
