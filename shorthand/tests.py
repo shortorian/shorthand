@@ -1,5 +1,6 @@
 import pandas as pd
 import shorthand as shnd
+from bibtexparser.bparser import BibTexParser
 
 
 def test_parsed_manual_annotation_resolve_links_has_no_nans():
@@ -121,4 +122,25 @@ def test_single_column_wrk_synthesis():
     assert (check == synthesized).all()
 
 
-def test_
+def test_parsed_bibtex_items_resolve_links_has_no_nans():
+
+    bibtex_parser = BibTexParser(common_strings=True)
+    bibtex_test_data_fname = "shorthand/test_data/bibtex_test_data_short.bib"
+    with open(bibtex_test_data_fname, encoding='utf8') as f:
+        bibdatabase = bibtex_parser.parse_file(f)
+
+    data = pd.DataFrame(bibdatabase.entries)
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_bibtex_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    parsed = s.parse_items(
+        data.iloc[:4],
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing'
+    )
+
+    parsed.resolve_links().isna().any(axis=None)
