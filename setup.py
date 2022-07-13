@@ -5,7 +5,7 @@ with open('README.md', 'r') as readme:
 
 setuptools.setup(
     name='shorthand',
-    version='0.1.1',
+    version='0.1.0',
     author='Devin Short',
     author_email='short.devin@gmail.com',
     packages=['shorthand'],
