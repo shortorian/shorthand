@@ -1658,6 +1658,8 @@ class Shorthand:
         parsed.strings = pd.concat([parsed.strings, new_string])
 
         # Insert a link between the input text and the entry syntax
+
+        input_text_string_id = parsed.strings.index[-1]
         new_link = {
             'src_string_id': input_text_string_id,
             'tgt_string_id': new_string.index[0],
@@ -2060,9 +2062,8 @@ class Shorthand:
 
         # These node types will be required later
         node_types = pd.Series([
-            'items_csv_text',
+            'items_text',
             'shorthand_entry_syntax',
-            'shorthand_link_syntax',
             'python_function',
             'tag'
         ])
@@ -2209,7 +2210,7 @@ class Shorthand:
             index=item_label_id_map
         )
 
-        return shnd.ParsedShorthand(
+        parsed = shnd.ParsedShorthand(
             strings=strings,
             links=links,
             link_tags=link_tags,
@@ -2226,3 +2227,67 @@ class Shorthand:
             syntax_case_sensitive=self.syntax_case_sensitive,
             allow_redundant_items=self.allow_redundant_items
         )
+
+        # Concat all entries into a single string
+        entry_node_type_id = parsed.id_lookup('link_types', 'entry')
+        items_text = parsed.links.query(
+            'link_type_id == @entry_node_type_id'
+        )
+        items_text = parsed.strings.loc[items_text['tgt_string_id'], 'string']
+        items_text = '\n'.join(items_text)
+
+        # Insert a strings row for the items text
+        items_text_node_type_id = parsed.id_lookup('node_types', 'items_text')
+        new_string = {
+            'string': items_text,
+            'node_type_id': items_text_node_type_id
+        }
+        new_string = shnd.util.normalize_types(new_string, parsed.strings)
+        parsed.strings = pd.concat([parsed.strings, new_string])
+
+        items_text_string_id = parsed.strings.index[-1]
+
+        # Insert a strings row for the current function
+        func_node_type_id = parsed.id_lookup('node_types', 'python_function')
+        new_string = {
+            'string': 'Shorthand.parse_items',
+            'node_type_id': func_node_type_id
+        }
+        new_string = shnd.util.normalize_types(new_string, parsed.strings)
+        parsed.strings = pd.concat([parsed.strings, new_string])
+
+        parse_function_string_id = parsed.strings.index[-1]
+
+        # Insert a strings row for the entry syntax
+        entry_syntax_node_type_id = parsed.id_lookup(
+            'node_types',
+            'shorthand_entry_syntax'
+        )
+        new_string = {
+            'string': self.entry_syntax,
+            'node_type_id': entry_syntax_node_type_id
+        }
+        new_string = shnd.util.normalize_types(new_string, parsed.strings)
+        parsed.strings = pd.concat([parsed.strings, new_string])
+
+        # Insert a link between the items text and the entry syntax
+        new_link = {
+            'src_string_id': items_text_string_id,
+            'tgt_string_id': new_string.index[0],
+            'ref_string_id': parse_function_string_id,
+            'link_type_id': parsed.id_lookup('link_types', 'requires')
+        }
+        new_link = shnd.util.normalize_types(new_link, parsed.links)
+        parsed.links = pd.concat([parsed.links, new_link])
+
+        # Links whose reference string ID is missing should have the
+        # items text as their reference string
+        ref_isna = parsed.links['ref_string_id'].isna()
+        parsed.links.loc[ref_isna, 'ref_string_id'] = items_text_string_id
+
+        # Links whose source string ID is missing should have the items
+        # text as their source string
+        src_isna = parsed.links['src_string_id'].isna()
+        parsed.links.loc[src_isna, 'src_string_id'] = items_text_string_id
+
+        return parsed
