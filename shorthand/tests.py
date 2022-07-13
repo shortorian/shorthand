@@ -1,5 +1,5 @@
 import pandas as pd
-import ..shorthand as shnd
+import shorthand as shnd
 from bibtexparser.bparser import BibTexParser
 
 
