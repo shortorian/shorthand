@@ -129,4 +129,4 @@ dmypy.json
 .pyre/
 
 notes/
-__pycache__/
+shorthand/__pycache__/
