@@ -130,6 +130,3 @@ dmypy.json
 
 notes/
 shorthand/__pycache__/
-shorthand/__pycache__/entry_parsing.cpython-39.pyc
-shorthand/__pycache__/ParsedShorthand.cpython-39.pyc
-shorthand/__pycache__/Shorthand.cpython-39.pyc
