@@ -3,6 +3,118 @@ import shorthand as shnd
 from bibtexparser.bparser import BibTexParser
 
 
+def test_parsed_manual_annotation_has_62_strings_rows():
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_entry_syntax.csv",
+        link_syntax="shorthand/resources/default_link_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    parsed = s.parse_text(
+        'shorthand/test_data/manual_annotation.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
+        skiprows=2,
+        comment_char='#'
+    )
+
+    assert (len(parsed.strings) == 62)
+
+
+def test_parsed_manual_annotation_string_id_58_startswith():
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_entry_syntax.csv",
+        link_syntax="shorthand/resources/default_link_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    parsed = s.parse_text(
+        'shorthand/test_data/manual_annotation.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
+        skiprows=2,
+        comment_char='#'
+    )
+
+    string58 = parsed.strings.loc[58, 'string']
+
+    assert (string58.startswith('This is stuff shorthand ignores'))
+
+
+def test_parsed_manual_annotation_has_105_links_rows():
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_entry_syntax.csv",
+        link_syntax="shorthand/resources/default_link_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    parsed = s.parse_text(
+        'shorthand/test_data/manual_annotation.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
+        skiprows=2,
+        comment_char='#'
+    )
+
+    assert (len(parsed.links) == 105)
+
+
+def test_parsed_manual_annotation_node_type_6_is_work():
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_entry_syntax.csv",
+        link_syntax="shorthand/resources/default_link_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    parsed = s.parse_text(
+        'shorthand/test_data/manual_annotation.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
+        skiprows=2,
+        comment_char='#'
+    )
+
+    assert (parsed.id_lookup('node_types', 'work', 'node_type') == 6)
+
+
+def test_parsed_manual_annotation_has_18_strings_of_node_type_6():
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_entry_syntax.csv",
+        link_syntax="shorthand/resources/default_link_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    parsed = s.parse_text(
+        'shorthand/test_data/manual_annotation.shnd',
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
+        skiprows=2,
+        comment_char='#'
+    )
+
+    assert (len(parsed.strings.query('node_type_id == 6')) == 18)
+
+
 def test_parsed_manual_annotation_resolve_links_has_no_nans():
 
     s = shnd.Shorthand(
