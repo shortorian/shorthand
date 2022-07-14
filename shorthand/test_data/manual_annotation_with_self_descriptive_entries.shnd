@@ -13,8 +13,8 @@ asmith_bwu__1999__bams__101__803__xxx,
     , qte__This is the abstract of the article. We did stuff and also found things., abstract p17
     , not__this is an article I made up for testing__ some note tags
     , not__here's a note with an escaped\__item separator and some "quotation marks"
-    , # ____weirdoPrefix__creator_actor_Jane Wu__created_date_1969__curator_actor_Octavia Washington, lt__new_relation plus_a_second lt__relation_definition, an|author__2199__some|other|source__!__!
-    , # ____weirdoPrefix2__artist_actor_An Artist__released_date_!, lt__funder plus_a_third lt__relation_dfntn, an|author__2199__some|other|source__!__!
+    , ____weirdoPrefix__creator_actor_Jane Wu__created_date_1969__curator_actor_Octavia Washington, lt__new_relation plus_a_second lt__relation_definition, an|author__2199__some|other|source__!__!
+    , ____weirdoPrefix2__artist_actor_An Artist__released_date_!, lt__funder plus_a_third lt__relation_dfntn, an|author__2199__some|other|source__!__!
 asmith_bwu__2008__bams__110__1__zzz,
     , asmith_bwu__1999__bams__101__803__xxx
     , ack__margaret|lemone_some|other|person
