@@ -8,3 +8,4 @@ wrk,fun,R1,L0,funded,m:m,L
 wrk,ack,L,R0,acknowledged,m:m,L
 wrk,qte,R0,L,contains,,L
 wrk,not,R0,L,annotates,,
+wrk,sdNode,R,L,woot,,

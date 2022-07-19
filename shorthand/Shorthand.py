@@ -124,17 +124,16 @@ def _expand_shorthand_items(
         # strings rather than items parsed out of the entries
         return group
 
-    # Locate this entry prefix ID in entry_prefix_id and get the string
-    # value for the entry prefix out of the map index
-    entry_prefix_id = group.name[0]
+    # Get the string value for the entry prefix out of the map index
     entry_prefix = entry_prefix_id_map.loc[
-        entry_prefix_id_map == entry_prefix_id
+        entry_prefix_id_map == group.name[0]
     ]
-    entry_prefix = entry_prefix.index.drop_duplicates()
-    if len(entry_prefix) > 1:
-        raise ValueError('entry prefix ID not unique')
-    else:
-        entry_prefix = entry_prefix[0]
+    entry_prefix = entry_prefix.index[0]
+
+    # If this prefix is not in the entry syntax then we assume this
+    # group is self-descriptive and items shouldn't be expanded
+    if entry_prefix not in entry_syntax['entry_prefix'].array:
+        return group
 
     # Locate the row for this item in the entry syntax and get the
     # list delimiter
@@ -198,10 +197,9 @@ def _normalize_shorthand(shnd_input, comment_char, fill_cols, drop_na):
             'columns'
         )
 
-    required_cols = ['left_entry',
-                     'right_entry',
-                     'link_tags_or_override',
-                     'reference']
+    required_cols = [
+        'left_entry', 'right_entry', 'link_tags_or_override', 'reference'
+    ]
 
     valid_columns = [
         (c in map(str.casefold, shnd_input.columns)) for c in required_cols
@@ -313,7 +311,7 @@ def _get_entry_prefix_ids(
     '''
 
     # "right" and "left" entries are defined in the link syntax
-    # file, but they don't constrain the location of those
+    # file but they don't constrain the location of those
     # columns in the input csv file, so we need to get the index
     # of the csv column for this side of the link.
     csv_col = csv_column_id_map[side + '_entry']
@@ -638,7 +636,8 @@ class Shorthand:
         drop_na,
         big_id_dtype,
         small_id_dtype,
-        list_position_base
+        list_position_base,
+        s_d_delimiter
     ):
         '''
         Takes a file-like object and parses it according to the
@@ -723,16 +722,44 @@ class Shorthand:
         )
 
         # Get any metadata for links between entries
-        link_metadata = data.loc[
-            data['link_tags_or_override'].notna(),
-            'link_tags_or_override'
-        ]
+        has_link_metadata = data['link_tags_or_override'].notna()
+        link_metadata = data.loc[has_link_metadata, 'link_tags_or_override']
 
-        # replace text column labels with integers so we compute on
-        # integer indexes
+        if not link_metadata.empty:
+
+            # Locate rows in the data that have self-descriptive entries
+            # and link metadata
+            entry_cols = ['left_entry', 'right_entry']
+            entry_cols = [c for c in entry_cols if c in data.columns]
+            has_s_d_entry = data[entry_cols].apply(
+                lambda x: x.str.startswith(''.join([item_separator]*2))
+            )
+            has_s_d_entry = has_s_d_entry.any(axis=1)
+            has_s_d_entry_and_link_metadata = has_link_metadata & has_s_d_entry
+
+            # Copy data rows with self-descriptive entries and link
+            # metadata
+            if has_s_d_entry_and_link_metadata.any():
+
+                has_s_d_entry_and_link_metadata = data.loc[
+                    has_s_d_entry_and_link_metadata,
+                    :
+                ]
+
+                make_s_d_links = True
+
+            else:
+
+                make_s_d_links = False
+
+        else:
+            make_s_d_links = False
+
+        # replace text column labels in the mutable data with integers
+        # so we compute on integer indexes
         csv_column_id_map = _create_id_map(
             list(data.columns),
-            dtype=pd.UInt8Dtype()
+            dtype=pd.UInt32Dtype()
         )
         data.columns = csv_column_id_map.array
 
@@ -826,7 +853,8 @@ class Shorthand:
             item_separator,
             default_entry_prefix,
             space_char,
-            na_string_values
+            na_string_values,
+            s_d_delimiter
         )
         data = data.reset_index()
         data = data.rename(
@@ -1091,9 +1119,69 @@ class Shorthand:
         })
         links = pd.concat([links, entry_links])
 
-        # If this instance has a link syntax, process it
+        # If the caller gave a link syntax, parse it
+        if 'link_syntax' in dir(self):
+
+            link_types, link_syntax = shnd.syntax_parsing.parse_link_syntax(
+                self.link_syntax,
+                self.entry_syntax,
+                entry_prefix_id_map,
+                link_types,
+                item_label_id_map,
+                case_sensitive=self.syntax_case_sensitive
+            )
+
         try:
-            assert self.link_syntax
+
+            # Escape any regex metacharacters in the item separator so
+            # we can use it in regular expressions
+            regex_item_separator = shnd.util.escape_regex_metachars(
+                item_separator
+            )
+            link_type_regex = rf"^(?:.*?)(lt{regex_item_separator}\S+)"
+
+            # Extract the link type overrides from the link metadata
+            # with a regular expression.
+            # TAKES ONLY THE FIRST MATCH, OTHERS CONSIDERED TAGS
+            # If link_metadata is empty then the next line of code
+            # throws an AttributeError and we jump to the next except
+            # block
+            l_t_overrides = link_metadata.str.extract(link_type_regex)
+            l_t_overrides = l_t_overrides.stack().dropna()
+            l_t_overrides.index = l_t_overrides.index.droplevel(1)
+            l_t_overrides = l_t_overrides.str.split(
+                item_separator,
+                expand=True
+            )
+
+            # If we found any new link types, process them, otherwise
+            # the next line throws a KeyError and we jump to the next
+            # except block
+            l_t_overrides = l_t_overrides[1]
+
+            # Add overridden types to the link types series
+            new_link_types = l_t_overrides.loc[
+                ~l_t_overrides.isin(link_types)
+            ]
+            link_types = pd.concat([
+                link_types,
+                shnd.util.normalize_types(new_link_types, link_types)
+            ])
+
+            # Map string-valued type overrides to integer link
+            # type IDs
+            l_t_overrides = l_t_overrides.map(
+                pd.Series(link_types.index, index=link_types.array)
+            )
+
+        except (AttributeError, KeyError):
+            # Either link_metadata is empty or l_t_overrides
+            # had only one column, and there are no new links to
+            # process
+            pass
+
+        try:
+            assert link_syntax is not None
 
             # Get entry prefixes for each side of links defined in the
             # link syntax
@@ -1137,15 +1225,6 @@ class Shorthand:
             # Pair up the prefixes so we can generate links from the
             # link syntax
             prefix_pairs = left_prefixes.merge(right_prefixes)
-
-            link_types, link_syntax = shnd.syntax_parsing.parse_link_syntax(
-                self.link_syntax,
-                self.entry_syntax,
-                entry_prefix_id_map,
-                link_types,
-                item_label_id_map,
-                case_sensitive=self.syntax_case_sensitive
-            )
 
             # Get string IDs for links whose sources and targets are
             # matched one-to-one according to the link syntax
@@ -1241,57 +1320,71 @@ class Shorthand:
                 'item_list_position': small_id_dtype
             })
 
-            # Link metadata, overriding link types created above and/or
-            # adding tags to links, was extracted from entries near the
-            # begining of this function. Now process the link types and
-            # insert the tag strings into the links frame.
+        except NameError:
+            # This NameError should have been generated by invoking
+            # link_syntax when there is no link syntax available.
+            # If we don't have a link syntax, move on.
+            pass
 
-            # Escape any regex metacharacters in the item separator so
-            # we can use it in regular expressions
-            regex_item_separator = shnd.util.escape_regex_metachars(
-                item_separator
+        # If there were lines with self-descriptive entries and
+        # link metadata, and the node types for one or both entries
+        # are not in the link syntax, we have to create new links for
+        # those lines.
+        if make_s_d_links:
+
+            possible_entries = pd.concat([
+                has_s_d_entry_and_link_metadata['left_entry'],
+                has_s_d_entry_and_link_metadata['right_entry'],
+                has_s_d_entry_and_link_metadata['reference']
+            ])
+
+            string_to_map = (strings['string'].isin(possible_entries))
+
+            string_map = strings['string'].loc[string_to_map]
+            string_map = pd.Series(string_map.index, index=string_map.array)
+
+            src_strings = has_s_d_entry_and_link_metadata['left_entry'].map(
+                string_map
+            )
+            tgt_strings = has_s_d_entry_and_link_metadata['right_entry'].map(
+                string_map
+            )
+            ref_strings = has_s_d_entry_and_link_metadata['reference'].map(
+                string_map
             )
 
-            # Extract the link type overrides from the link metadata
-            # with a regular expression
-            # TAKES ONLY THE FIRST MATCH, OTHERS CONSIDERED TAGS
-            link_type_regex = rf"^(?:.*?)(lt{regex_item_separator}\S+)"
-            link_type_overrides = link_metadata.str.extract(link_type_regex)
-            link_type_overrides = link_type_overrides.stack().dropna()
-            link_type_overrides.index = link_type_overrides.index.droplevel(1)
-            link_type_overrides = link_type_overrides.str.split(
-                item_separator,
-                expand=True
-            )
+            new_links = pd.DataFrame({
+                'src_string_id': src_strings.array,
+                'tgt_string_id': tgt_strings.array,
+                'ref_string_id': ref_strings.array,
+                'link_type_id': pd.NA,
+                'entry_csv_row': has_s_d_entry_and_link_metadata.index,
+                'item_list_position': pd.NA
+            })
+            new_links = shnd.util.normalize_types(new_links, links)
+
+            links = pd.concat([links, new_links])
+
+        if 'entry_csv_row' in links.columns:
+
+            # If we applied a link syntax above or processed links for
+            # self-descriptive entries then we created a column in the
+            # links frame for the entry_csv_row. We need to match up the
+            # link metadata with links rather than csv rows and drop the
+            # csv information from the links frame.
 
             try:
-                # If we found any new link types, process them
-                link_type_overrides = link_type_overrides[1]
+                assert l_t_overrides.empty is False
 
-                # Add overridden types to the link types series
-                new_link_types = link_type_overrides.loc[
-                    ~link_type_overrides.isin(link_types)
-                ]
-                link_types = pd.concat([
-                    link_types,
-                    shnd.util.normalize_types(new_link_types, link_types)
-                ])
-
-                # Map string-valued type overrides to integer link
-                # type IDs
-                link_type_overrides = link_type_overrides.map(
-                    pd.Series(link_types.index, index=link_types.array)
+                # Replace overriden link type IDs if they exist
+                l_t_overrides = links['entry_csv_row'].dropna().map(
+                    l_t_overrides
                 )
+                links['link_type_id'].update(l_t_overrides.dropna())
 
-                # Replace overriden link type IDs
-                link_type_overrides = links['entry_csv_row'].dropna().map(
-                    link_type_overrides
-                )
-                links['link_type_id'].update(link_type_overrides.dropna())
-
-            except KeyError:
-                # If there wasn't a second column in link_type_overrides
-                # then there are no new links to process.
+            except (AssertionError, NameError):
+                # If we get here then there were no link type
+                # overrides, so move on
                 pass
 
             # The link metadata index currently refers to csv rows.
@@ -1305,11 +1398,6 @@ class Shorthand:
 
             # We're done with the csv information
             links = links.drop('entry_csv_row', axis='columns')
-
-        except AttributeError:
-            # Assume an attribute error was generated when asserting a
-            # link syntax. If it wasn't present, continue.
-            pass
 
         # The item_list_position label is probably only intelligible
         # when handling items within entries, so rename it
@@ -1345,7 +1433,7 @@ class Shorthand:
             ['string_id', 'node_tags']
         ]
         tags = pd.Series(tags['node_tags'].array, index=tags['string_id'])
-        tags = tags.str.split().explode()
+        tags = tags.str.split().explode().drop_duplicates()
 
         # tags is now a pandas.Series whose index is string IDs and
         # whose values are individual tag strings
@@ -1411,13 +1499,15 @@ class Shorthand:
         # Convert any item list positions into strings and append them
         # to the link tag strings
         list_pos = links['list_position'].dropna().astype(str)
-        has_list_pos_and_tags = list_pos.index.intersection(link_tags.index)
+        has_list_pos_and_tags = list_pos.index.intersection(
+            link_tags.index
+        )
         list_pos_but_no_tags = list_pos.index.difference(link_tags.index)
 
         if has_list_pos_and_tags.empty:
             link_tags = pd.concat([link_tags, list_pos])
 
-        elif list_pos.difference(has_list_pos_and_tags).empty:
+        elif list_pos.index.difference(has_list_pos_and_tags).empty:
             link_tags.loc[list_pos.index] = [
                 ' '.join(pair) for pair in
                 zip(link_tags.loc[list_pos.index], list_pos)
@@ -1520,7 +1610,8 @@ class Shorthand:
         drop_na='right_entry',
         big_id_dtype=pd.Int32Dtype(),
         small_id_dtype=pd.Int8Dtype(),
-        list_position_base=1
+        list_position_base=1,
+        s_d_delimiter='_'
     ):
         ####################
         # Validate arguments
@@ -1531,16 +1622,9 @@ class Shorthand:
         # a buffer then it will be empty after it's passed to
         # pandas.read_csv, so we write it to a temp file.
         if 'read' in dir(filepath_or_buffer):
-            if not Path.is_file('temp.shorthand'):
+            if not Path.is_file(Path('temp.shorthand')):
                 with open('temp.shorthand', 'w') as f:
-                    f.write(filepath_or_buffer)
-
-            else:
-                raise RuntimeError(
-                    'Cannot overwrite file temp.shorthand in the '
-                    'current working directory. Delete, move, or '
-                    'rename and try again.'
-                )
+                    f.write(filepath_or_buffer.read())
 
             filepath_or_buffer = 'temp.shorthand'
 
@@ -1605,32 +1689,33 @@ class Shorthand:
             drop_na,
             big_id_dtype,
             small_id_dtype,
-            list_position_base
+            list_position_base,
+            s_d_delimiter
         )
 
         # Read input text from temp file
         with open(filepath_or_buffer, 'r') as f:
             new_string = f.read()
 
-            if hash(new_string) != input_hash:
-                raise RuntimeError('input text was modified during parsing')
+        if hash(new_string) != input_hash:
+            raise RuntimeError('input text was modified during parsing')
 
-            # Delete the temp file if it exists
-            Path.unlink(Path('temp.shorthand'), missing_ok=True)
+        # Delete the temp file if it exists
+        Path.unlink(Path('temp.shorthand'), missing_ok=True)
 
-            # Build an input_text row for the strings frame
-            txt_node_type_id = parsed.id_lookup('node_types', 'shorthand_text')
-            new_string = {
-                'string': new_string,
-                'node_type_id': txt_node_type_id
-            }
-            new_string = shnd.util.normalize_types(
-                new_string,
-                parsed.strings
-            )
+        # Build an input_text row for the strings frame
+        txt_node_type_id = parsed.id_lookup('node_types', 'shorthand_text')
+        new_string = {
+            'string': new_string,
+            'node_type_id': txt_node_type_id
+        }
+        new_string = shnd.util.normalize_types(
+            new_string,
+            parsed.strings
+        )
 
-            # Insert a strings row for the input text
-            parsed.strings = pd.concat([parsed.strings, new_string])
+        # Insert a strings row for the input text
+        parsed.strings = pd.concat([parsed.strings, new_string])
 
         input_text_string_id = parsed.strings.index[-1]
 
@@ -1659,7 +1744,6 @@ class Shorthand:
 
         # Insert a link between the input text and the entry syntax
 
-        input_text_string_id = parsed.strings.index[-1]
         new_link = {
             'src_string_id': input_text_string_id,
             'tgt_string_id': new_string.index[0],

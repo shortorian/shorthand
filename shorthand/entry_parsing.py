@@ -193,7 +193,8 @@ def parse_entries(
     item_separator,
     default_entry_prefix,
     space_char,
-    na_string_values
+    na_string_values,
+    s_d_delimiter
 ):
     '''
     Take a stacked pandas.Series of shorthand entry strings and expands
@@ -260,11 +261,12 @@ def parse_entries(
 
     # Use a regular expression to get entry prefixes
     # (null if no prefix)
-    prefixes_regex = [
+    prefixes = [
         shnd.util.escape_regex_metachars(p) for p in
         entry_syntax['entry_prefix'].dropna().drop_duplicates()
     ]
-    prefixes_regex = '|'.join(prefixes_regex)
+    prefixes = prefixes + [regex_item_separator]
+    prefixes_regex = '|'.join(prefixes)
     prefixes_regex = '^({})(?={})'.format(prefixes_regex, regex_item_separator)
 
     entries['entry_prefix'] = entries['string'].str.extract(prefixes_regex)
@@ -316,12 +318,129 @@ def parse_entries(
         value=regex_space_char,
         regex=True
     )
-
     # Stack the expanded items. Stacking creates a series whose values
     # are the string values of every item in the input entries and
     # whose index levels are
     #       csv rows, csv columns, entry prefix, item label
     expanded = expanded.stack()
+
+    # Locate any items that came out of an entry with self-descriptive
+    # syntax.
+    item_is_s_d = (expanded.index.get_level_values(2) == regex_item_separator)
+    s_d_items_exist = item_is_s_d.any()
+
+    if s_d_items_exist:
+
+        # S-d entry node types are first items in s-d entries, so locate
+        # those
+        item_is_first_in_entry = (
+            expanded.index.get_level_values(3) == '0'
+        )
+        s_d_entry_node_types = expanded.loc[
+            item_is_s_d & item_is_first_in_entry,
+            :
+        ]
+        entry_is_s_d = (entries['entry_prefix'] == regex_item_separator)
+        entries.loc[entry_is_s_d, 'entry_prefix'] = s_d_entry_node_types.array
+
+        # You can't use syntactic prefixes as node types in s-d entries
+        node_type_collisions = s_d_entry_node_types.isin(
+            entry_syntax['entry_prefix']
+        )
+        if node_type_collisions.any():
+            collisions = s_d_entry_node_types.loc[node_type_collisions]
+            raise ValueError(
+                'Self-descriptive entries cannot use entry node types '
+                'that are also entry prefixes in the entry syntax.\n'
+                '            Found the following syntactic entry '
+                'prefixes in self-descriptive entries:\n'
+                '            {}'.format(list(collisions))
+            )
+
+        # Self-descriptive entries might have different numbers of
+        # items, leading the parser to introduce missing values not
+        # present in the input data and assign them the first
+        # na_string_value. Locate items whose string values are not the
+        # first na_string_value and drop them.
+        item_is_not_na_value_0 = (expanded != na_string_values[0])
+        s_d_items_to_keep = (
+            item_is_s_d & item_is_not_na_value_0 & ~item_is_first_in_entry
+        )
+
+        # Drop the s-d entry node types and missing values created by
+        # the parser and separate the syntactic entries from the
+        # s-d entries
+        expanded_s_d_items = expanded.loc[s_d_items_to_keep]
+        expanded_syntactic_items = expanded.loc[~item_is_s_d]
+
+        # Get the number of items in each s-d entry aside from the
+        # entry node type
+        s_d_entry_lengths = expanded_s_d_items.groupby(level=[0, 1])
+        s_d_entry_lengths = s_d_entry_lengths.apply(
+            lambda x: len(x)
+        )
+
+        # Self-descriptive items must have exactly two delimiters,
+        # one between the link type and the node type and the other
+        # between the node type and the string value
+        num_delimiters = expanded_s_d_items.map(
+            lambda x: x.count(s_d_delimiter)
+        )
+        if (num_delimiters != 2).any():
+            raise ValueError(
+                'Self-descriptive entries must have exactly two '
+                'delimiters in every item.'
+            )
+
+        # Separate the node types, link types, and string values in the
+        # s-d items
+        expanded_s_d_items = expanded_s_d_items.str.split(
+            s_d_delimiter,
+            expand=True
+        )
+
+        # Create an index for the s-d items that includes the entry
+        # node types (which might be prefixes from the entry syntax)
+        s_d_entry_node_types = [
+            v
+            for i in range(len(s_d_entry_lengths))
+            for v in ([s_d_entry_node_types.iloc[i]]*s_d_entry_lengths.iloc[i])
+        ]
+
+        # Make an index for the s-d items that has the entry node types
+        # where the entry prefixes should appear
+        s_d_idx = expanded_s_d_items.index
+        s_d_item_labels = s_d_idx.get_level_values(3)
+        s_d_idx = pd.MultiIndex.from_arrays((
+            s_d_idx.get_level_values(0),
+            s_d_idx.get_level_values(1),
+            s_d_entry_node_types,
+            s_d_item_labels
+        ))
+        s_d_idx.names = [None, None, 'grp_prefix', None]
+
+        # Create a map from s-d entry node types (which could be entry
+        # prefixes from the entry syntax) and item labels to item node
+        # types and item link types
+        s_d_item_types = pd.DataFrame({
+            'entry_prefix': s_d_entry_node_types,
+            'item_label': s_d_item_labels,
+            'node_type': expanded_s_d_items[1].array,
+            'link_type': expanded_s_d_items[0].array
+        })
+        s_d_item_types = s_d_item_types.drop_duplicates()
+        s_d_item_types = s_d_item_types.set_index('entry_prefix', drop=True)
+        s_d_item_types = s_d_item_types.set_index(
+            'item_label',
+            append=True,
+            drop=True
+        )
+
+        # Include the s-d data in the expanded items series
+        expanded = pd.concat([
+            pd.Series(expanded_s_d_items[2].array, index=s_d_idx),
+            expanded_syntactic_items
+        ])
 
     # Convert expanded to a dataframe so we can concatenate it with
     # columns
@@ -330,14 +449,17 @@ def parse_entries(
     # Create a map from entry prefixes and item labels to item node
     # types and item link types
     item_label_idx = pd.MultiIndex.from_arrays(
-        (entry_syntax['entry_prefix'],
-         entry_syntax['item_label'])
+        (entry_syntax['entry_prefix'], entry_syntax['item_label'])
     )
     item_types = pd.DataFrame(
         {'node_type': entry_syntax['item_node_type'].array,
          'link_type': entry_syntax['item_link_type'].array},
         index=item_label_idx
     )
+
+    # Add self-descriptive item types if they exist
+    if s_d_items_exist:
+        item_types = pd.concat([item_types, s_d_item_types])
 
     # Get an index of entry prefixes and item labels from the expanded
     # items.
@@ -369,6 +491,24 @@ def parse_entries(
         'entry_node_type'
     )
     node_type_map[pd.NA] = default_entry_type
+    # Add self-descriptive node types to the node type map
+    if s_d_items_exist:
+
+        s_d_node_types = pd.Series(s_d_item_types.index.get_level_values(0))
+        s_d_node_types = s_d_node_types.drop_duplicates()
+
+        # If there are syntactic entry prefixes in the self-descriptive
+        # node types, don't add new map data for them
+        s_d_node_types = s_d_node_types.loc[
+            ~s_d_node_types.isin(node_type_map.index)
+        ]
+
+        # Self-descriptive entry node "prefixes" are their own node
+        # types
+        s_d_node_types = pd.Series(s_d_node_types.array, index=s_d_node_types)
+
+        node_type_map = pd.concat([node_type_map, s_d_node_types])
+
     # Normalize null types
     entries = entries.fillna(pd.NA)
 

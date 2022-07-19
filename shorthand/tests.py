@@ -1,6 +1,7 @@
 import pandas as pd
 import shorthand as shnd
 from bibtexparser.bparser import BibTexParser
+from io import StringIO
 
 
 def test_parsed_manual_annotation_has_62_strings_rows():
@@ -292,3 +293,57 @@ def test_bibtex_identifier_parsing():
     ])
 
     assert (check == parsed_identifiers['string'].array).all()
+
+
+def test_s_d_strings_subset_same_as_shnd_strings_subset():
+
+    s = shnd.Shorthand(
+        entry_syntax="shorthand/resources/default_entry_syntax.csv",
+        link_syntax="shorthand/resources/default_link_syntax.csv",
+        syntax_case_sensitive=False
+    )
+
+    shorthand = (
+        'left_entry, right_entry, link_tags_or_override, reference\n'
+        'Auth1__2000__BAMS__100__!__xxx__ tag1 tag2, '
+        'Auth2__1990__BAMS__90__40__yyy__ tag1 tag3, '
+        'LinkTag'
+    )
+
+    self_descriptive = (
+        'left_entry, right_entry, link_tags_or_override, reference\n'
+        '____work__author_actor_Auth1__published_date_2000__supertitle_work_BAMS__volume_work_100__page_work_!__doi_identifier_xxx__ tag1 tag2, '
+        '____work__author_actor_Auth2__published_date_1990__supertitle_work_BAMS__volume_work_90__page_work_40__doi_identifier_yyy__ tag1 tag3, '
+        'lt__cited LinkTag'
+    )
+
+    parsed_shnd_sources = s.parse_text(
+        StringIO(shorthand),
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
+        comment_char='#'
+    )
+
+    parsed_s_d_sources = s.parse_text(
+        StringIO(self_descriptive),
+        item_separator='__',
+        default_entry_prefix='wrk',
+        space_char='|',
+        na_string_values='!',
+        na_node_type='missing',
+        comment_char='#'
+    )
+
+    shnd_strings = parsed_shnd_sources.resolve_strings()
+    shnd_strings = shnd_strings.loc[~shnd_strings['node_type'].isin(['entry', 'shorthand_text', 'shorthand_link_syntax', 'shorthand_entry_syntax', 'work'])]
+    shnd_strings = shnd_strings.loc[shnd_strings['string'] != '1']
+    shnd_strings = shnd_strings.sort_values(by='string').reset_index(drop=True)
+
+    s_d_strings = parsed_s_d_sources.resolve_strings()
+    s_d_strings = s_d_strings.loc[~s_d_strings['node_type'].isin(['entry', 'shorthand_text', 'shorthand_link_syntax', 'shorthand_entry_syntax', 'work'])]
+    s_d_strings = s_d_strings.sort_values(by='string').reset_index(drop=True)
+
+    assert (shnd_strings == s_d_strings).all().all()
